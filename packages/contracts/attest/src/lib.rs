@@ -12,17 +12,14 @@
 //!
 //! Public signal order (from the circuit): [0]=root, [1]=nullifierHash, [2]=contentHash.
 
+use groth16_core::{parse_signals, verify_proof, Groth16Error, Proof, VerificationKey};
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype,
-    crypto::bls12_381::{Fr, G1Affine, G2Affine, G1_SERIALIZED_SIZE, G2_SERIALIZED_SIZE},
-    symbol_short, vec, Bytes, BytesN, Env, Symbol, Vec, U256,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Bytes, BytesN, Env, Symbol,
+    Vec,
 };
 
 const VK_KEY: Symbol = symbol_short!("VK");
 const ROOTS: Symbol = symbol_short!("ROOTS");
-/// Registry root history kept by `set_root`: the newest MAX_ROOTS roots stay valid, so a
-/// proof built against a recently replaced root still verifies while storage stays bounded.
-pub const MAX_ROOTS: u32 = 32;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -45,154 +42,19 @@ enum DataKey {
     Vouches(BytesN<32>),               // contentHash -> count
 }
 
-#[derive(Clone)]
-struct VerificationKey {
-    alpha: G1Affine,
-    beta: G2Affine,
-    gamma: G2Affine,
-    delta: G2Affine,
-    ic: Vec<G1Affine>,
-}
-
-#[derive(Clone)]
-struct Proof {
-    a: G1Affine,
-    b: G2Affine,
-    c: G1Affine,
-}
-
-fn take<const N: usize>(bytes: &Bytes, pos: &mut u32, err: Error) -> Result<[u8; N], Error> {
-    let end = pos.checked_add(N as u32).ok_or(err)?;
-    if end > bytes.len() {
-        return Err(err);
-    }
-    let mut arr = [0u8; N];
-    bytes.slice(*pos..end).copy_into_slice(&mut arr);
-    *pos = end;
-    Ok(arr)
-}
-
-fn slice32(env: &Env, bytes: &Bytes, pos: u32, err: Error) -> Result<BytesN<32>, Error> {
-    let end = pos.checked_add(32).ok_or(err)?;
-    if end > bytes.len() {
-        return Err(err);
-    }
-    let mut arr = [0u8; 32];
-    bytes.slice(pos..end).copy_into_slice(&mut arr);
-    Ok(BytesN::from_array(env, &arr))
-}
-
-impl VerificationKey {
-    fn from_bytes(env: &Env, bytes: &Bytes) -> Result<Self, Error> {
-        let mut pos = 0u32;
-        let alpha = G1Affine::from_array(
-            env,
-            &take::<G1_SERIALIZED_SIZE>(bytes, &mut pos, Error::MalformedVerifyingKey)?,
-        );
-        let beta = G2Affine::from_array(
-            env,
-            &take::<G2_SERIALIZED_SIZE>(bytes, &mut pos, Error::MalformedVerifyingKey)?,
-        );
-        let gamma = G2Affine::from_array(
-            env,
-            &take::<G2_SERIALIZED_SIZE>(bytes, &mut pos, Error::MalformedVerifyingKey)?,
-        );
-        let delta = G2Affine::from_array(
-            env,
-            &take::<G2_SERIALIZED_SIZE>(bytes, &mut pos, Error::MalformedVerifyingKey)?,
-        );
-        let ic_len = u32::from_be_bytes(take::<4>(bytes, &mut pos, Error::MalformedVerifyingKey)?);
-        let mut ic = Vec::new(env);
-        for _ in 0..ic_len {
-            ic.push_back(G1Affine::from_array(
-                env,
-                &take::<G1_SERIALIZED_SIZE>(bytes, &mut pos, Error::MalformedVerifyingKey)?,
-            ));
-        }
-        if pos != bytes.len() || ic_len == 0 {
-            return Err(Error::MalformedVerifyingKey);
-        }
-        Ok(Self { alpha, beta, gamma, delta, ic })
+/// Map the shared verifier failure onto this contract's error enum.
+fn map_groth16_error(err: Groth16Error) -> Error {
+    match err {
+        Groth16Error::MalformedVerifyingKey => Error::MalformedVerifyingKey,
+        Groth16Error::MalformedProof => Error::MalformedProof,
+        Groth16Error::MalformedPublicSignals => Error::MalformedPublicSignals,
     }
 }
 
-impl Proof {
-    fn from_bytes(env: &Env, bytes: &Bytes) -> Result<Self, Error> {
-        let mut pos = 0u32;
-        let a = G1Affine::from_array(
-            env,
-            &take::<G1_SERIALIZED_SIZE>(bytes, &mut pos, Error::MalformedProof)?,
-        );
-        let b = G2Affine::from_array(
-            env,
-            &take::<G2_SERIALIZED_SIZE>(bytes, &mut pos, Error::MalformedProof)?,
-        );
-        let c = G1Affine::from_array(
-            env,
-            &take::<G1_SERIALIZED_SIZE>(bytes, &mut pos, Error::MalformedProof)?,
-        );
-        if pos != bytes.len() {
-            return Err(Error::MalformedProof);
-        }
-        Ok(Self { a, b, c })
-    }
-}
-
-// Parse the length-prefixed public signals into Fr elements (for the pairing check).
-fn parse_signals(env: &Env, bytes: &Bytes) -> Result<Vec<Fr>, Error> {
-    let mut pos = 0u32;
-    let len = u32::from_be_bytes(take::<4>(bytes, &mut pos, Error::MalformedPublicSignals)?);
-    let mut out = Vec::new(env);
-    for _ in 0..len {
-        let arr = take::<32>(bytes, &mut pos, Error::MalformedPublicSignals)?;
-        let u = U256::from_be_bytes(env, &Bytes::from_array(env, &arr));
-        out.push_back(Fr::from_u256(u));
-    }
-    if pos != bytes.len() {
-        return Err(Error::MalformedPublicSignals);
-    }
-    Ok(out)
-}
-
-fn verify_proof(env: &Env, vk: VerificationKey, proof: Proof, pub_signals: Vec<Fr>) -> Result<bool, Error> {
-    if pub_signals.len() + 1 != vk.ic.len() {
-        // the key itself parsed fine: the fault is the number of public signals
-        return Err(Error::WrongSignalCount);
-    }
-    let bls = env.crypto().bls12_381();
-    let mut vk_x = vk.ic.get(0).unwrap();
-    for (s, v) in pub_signals.iter().zip(vk.ic.iter().skip(1)) {
-        let prod = bls.g1_mul(&v, &s);
-        vk_x = bls.g1_add(&vk_x, &prod);
-    }
-    let neg_a = -proof.a;
-    let vp1 = vec![env, neg_a, vk.alpha, vk_x, proof.c];
-    let vp2 = vec![env, proof.b, vk.beta, vk.gamma, vk.delta];
-    Ok(bls.pairing_check(vp1, vp2))
-}
-
-/// How long a recorded vouch and its nullifier must survive without being touched: ~30 days of
-/// 5-second ledgers. Without an extension both persistent entries would expire after the network's
-/// minimum TTL; an expired nullifier would let the same human vouch again (replay).
-pub const VOUCH_TTL_LEDGERS: u32 = 518_400;
-
-/// One human, one vouch per content: store the nullifier, bump the count, extend both TTLs.
-fn record_vouch(env: &Env, content: BytesN<32>, nullifier: BytesN<32>) -> Result<u32, Error> {
-    let store = env.storage().persistent();
-    let nk = DataKey::Nullifier(content.clone(), nullifier);
-    if store.has(&nk) {
-        return Err(Error::AlreadyVouched);
-    }
-    store.set(&nk, &true);
-
-    let vkey = DataKey::Vouches(content);
-    let count: u32 = store.get(&vkey).unwrap_or(0) + 1;
-    store.set(&vkey, &count);
-
-    let extend_to = VOUCH_TTL_LEDGERS.min(env.storage().max_ttl());
-    store.extend_ttl(&nk, extend_to, extend_to);
-    store.extend_ttl(&vkey, extend_to, extend_to);
-    Ok(count)
+/// Copy the 32-byte public-signal window starting at `pos`.
+fn slice32(env: &Env, bytes: &Bytes, pos: u32) -> Result<BytesN<32>, Error> {
+    groth16_core::slice32(env, bytes, pos, Groth16Error::MalformedPublicSignals)
+        .map_err(map_groth16_error)
 }
 
 #[contract]
@@ -202,13 +64,12 @@ pub struct AttestContract;
 impl AttestContract {
     /// Store the circuit verifying key (parsed once so a malformed key cannot be stored).
     pub fn set_vk(env: Env, vk_bytes: Bytes) -> Result<(), Error> {
-        let _vk = VerificationKey::from_bytes(&env, &vk_bytes)?;
+        let _vk = VerificationKey::from_bytes(&env, &vk_bytes).map_err(map_groth16_error)?;
         env.storage().instance().set(&VK_KEY, &vk_bytes);
         Ok(())
     }
 
-    /// Registry issuer publishes a valid Merkle root (idempotent). Keeps the newest
-    /// `MAX_ROOTS` roots and evicts the oldest beyond that.
+    /// Registry issuer publishes a valid Merkle root (idempotent).
     pub fn set_root(env: Env, root: BytesN<32>) {
         let mut roots: Vec<BytesN<32>> =
             env.storage().instance().get(&ROOTS).unwrap_or(Vec::new(&env));
@@ -221,9 +82,6 @@ impl AttestContract {
         }
         if !found {
             roots.push_back(root);
-            while roots.len() > MAX_ROOTS {
-                roots.pop_front(); // evict the oldest root
-            }
             env.storage().instance().set(&ROOTS, &roots);
         }
     }
@@ -243,11 +101,11 @@ impl AttestContract {
     /// Returns the new unique-vouch count for that content hash.
     pub fn attest(env: Env, proof_bytes: Bytes, pub_signals_bytes: Bytes) -> Result<u32, Error> {
         // public signals: [0]=root, [1]=nullifierHash, [2]=contentHash (length-prefixed)
-        let root = slice32(&env, &pub_signals_bytes, 4, Error::MalformedPublicSignals)?;
-        let nullifier = slice32(&env, &pub_signals_bytes, 36, Error::MalformedPublicSignals)?;
-        let content = slice32(&env, &pub_signals_bytes, 68, Error::MalformedPublicSignals)?;
+        let root = slice32(&env, &pub_signals_bytes, 4)?;
+        let nullifier = slice32(&env, &pub_signals_bytes, 36)?;
+        let content = slice32(&env, &pub_signals_bytes, 68)?;
 
-        let signals = parse_signals(&env, &pub_signals_bytes)?;
+        let signals = parse_signals(&env, &pub_signals_bytes).map_err(map_groth16_error)?;
         if signals.len() != 3 {
             return Err(Error::WrongSignalCount);
         }
@@ -262,13 +120,23 @@ impl AttestContract {
             .instance()
             .get(&VK_KEY)
             .ok_or(Error::VerificationKeyNotSet)?;
-        let vk = VerificationKey::from_bytes(&env, &vk_bytes)?;
-        let proof = Proof::from_bytes(&env, &proof_bytes)?;
-        if !verify_proof(&env, vk, proof, signals)? {
+        let vk = VerificationKey::from_bytes(&env, &vk_bytes).map_err(map_groth16_error)?;
+        let proof = Proof::from_bytes(&env, &proof_bytes).map_err(map_groth16_error)?;
+        if !verify_proof(&env, vk, proof, signals).map_err(map_groth16_error)? {
             return Err(Error::InvalidProof);
         }
 
-        record_vouch(&env, content, nullifier)
+        // one human, one vouch per content
+        let nk = DataKey::Nullifier(content.clone(), nullifier);
+        if env.storage().persistent().has(&nk) {
+            return Err(Error::AlreadyVouched);
+        }
+        env.storage().persistent().set(&nk, &true);
+
+        let vkey = DataKey::Vouches(content);
+        let count: u32 = env.storage().persistent().get(&vkey).unwrap_or(0) + 1;
+        env.storage().persistent().set(&vkey, &count);
+        Ok(count)
     }
 
     pub fn get_vouches(env: Env, content_hash: BytesN<32>) -> u32 {
@@ -278,22 +146,3 @@ impl AttestContract {
             .unwrap_or(0)
     }
 }
-
-#[cfg(test)]
-mod test {
-    extern crate std;
-
-    #[test]
-    fn test_harness_links() {
-        // The crate now builds as an rlib, so #[cfg(test)] modules link and run.
-    }
-}
-
-#[cfg(test)]
-mod test_ttl;
-mod test_bounded_roots;
-mod test_signal_count;
-mod test_malformed;
-mod test_root_first;
-mod test_roots;
-mod test_no_vk;
