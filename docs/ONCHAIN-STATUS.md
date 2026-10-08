@@ -7,7 +7,7 @@ Last updated: 2026-10-08
 - **Curve:** BLS12-381 (mandatory; Soroban native pairing). Plan 01's BN254 setup is superseded.
 - **Deployed verifier contract:** `CCOJFWMUSKLD6VAYNXD3JO442PNI76YOHY4VG6JX77EPYKH5UEIT3BKS` (testnet).
   Exposes `set_vk(vk_bytes)` and `verify(proof_bytes, pub_signals_bytes) -> bool`.
-- **Deployer identity:** `hv-deployer` → `GDTLFJ4P2YYJRVO4ED4YQSC5MXKVXYNZPVZXIF3IB5WRMWRFKCJW7BPE` (funded via Friendbot; key in `~/.config/stellar/identity/`).
+- **Deployer identity:** `hv-deployer` → `GDTLFJ4P2YYJRVO4ED4YQSC5MXKVXYNZPVZXIF3IB5WRMWRFKCJW7BPE` (funded via Friendbot; signing key is supplied externally via environment variable or secure vault, not stored in repository path). Dedicated solely to testnet contract deployment and admin configuration.
 - **Phase A:** trivial bls12381 proof verified on-chain → `true`.
 - **Phase B core:** the REAL membership circuit (`packages/zk/circuits/attestation255.circom`,
   Poseidon-Merkle depth 10, 7366 constraints) verified ON-CHAIN → `true`. Public signals
