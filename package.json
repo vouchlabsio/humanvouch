@@ -1,22 +1,23 @@
 {
   "name": "humanvouch",
-  "version": "0.1.0",
-  "license": "MIT",
   "private": true,
   "type": "module",
   "workspaces": [
     "packages/*"
   ],
   "packageManager": "yarn@4.14.1",
-  "engines": {
-    "node": ">=20"
-  },
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
-    "test": "turbo test"
+    "test": "turbo test",
+    "lint": "eslint packages/web"
   },
   "devDependencies": {
-    "turbo": "^2"
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "eslint-plugin-vue": "^9.32.0",
+    "turbo": "^2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0"
   }
 }

@@ -1,13 +1,20 @@
 // Verify a Cloudflare Turnstile token server-side (real anti-bot human check).
-// Reads CF_TURNSTILE_SECRET from the environment (see .env.example). Without it,
-// falls back to Turnstile's public TEST secret (always passes) so the demo works
-// with no signup; set a real key in production.
-const TURNSTILE_TEST_SECRET = "1x0000000000000000000000000000000AA";
-const TURNSTILE_SECRET = process.env.CF_TURNSTILE_SECRET || TURNSTILE_TEST_SECRET;
+// Uses Turnstile's public TEST secret (always passes) so the demo works with no
+// signup; swap CF_TURNSTILE_SECRET for a real key in production.
+const TURNSTILE_SECRET = "1x0000000000000000000000000000000AA";
+
+interface TurnstileBody {
+  token?: string;
+}
+
+interface TurnstileResponse {
+  success?: boolean;
+  "error-codes"?: string[];
+}
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody(event).catch(() => ({}));
-  const token = (body as any)?.token;
+  const body = await readBody<TurnstileBody>(event).catch(() => ({} as TurnstileBody));
+  const token = body?.token;
   if (!token) {
     setResponseStatus(event, 400);
     return { success: false, error: "missing token" };
@@ -17,6 +24,6 @@ export default defineEventHandler(async (event) => {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ secret: TURNSTILE_SECRET, response: token }),
   });
-  const data: any = await res.json();
+  const data = (await res.json()) as TurnstileResponse;
   return { success: !!data.success, errors: data["error-codes"] ?? [] };
 });
