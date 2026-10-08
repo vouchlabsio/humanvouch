@@ -85,4 +85,11 @@ describe("explicit hash validation", () => {
     expect(result.status).toBe(400);
     expect(result.body).toMatchObject({ code: "INVALID_HASH" });
   });
+
+  it("returns 413 when content exceeds 8 KiB", async () => {
+    const longContent = "a".repeat(8193);
+    const result = await request({ content: longContent });
+    expect(result.status).toBe(413);
+    expect(result.body).toMatchObject({ code: "CONTENT_TOO_LARGE" });
+  });
 });
