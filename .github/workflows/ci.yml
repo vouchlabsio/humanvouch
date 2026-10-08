@@ -1,7 +1,11 @@
 name: CI
 on:
-  push: null
-  pull_request: null
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - main
 jobs:
   contracts:
     name: contracts (build + test)
@@ -57,5 +61,20 @@ jobs:
         \ >> \"$GITHUB_PATH\"\n"
     - name: Test circuits
       run: yarn workspace @humanvouch/circuits test
+  typecheck:
+    name: web (typecheck)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: yarn
+    - name: Install workspace deps
+      run: yarn install --frozen-lockfile
+    - name: Nuxt prepare
+      run: yarn workspace @humanvouch/web run postinstall
+    - name: Typecheck Nuxt app
+      run: yarn workspace @humanvouch/web run typecheck
 permissions:
   contents: read
