@@ -8,31 +8,31 @@
 //   -> 402 with payment requirements  (no X-Payment header)
 //   -> 200 with the on-chain attestation (with X-Payment header)
 //
+// `content` and `hash` are single-value parameters: a repeated parameter
+// (?content=a&content=b) would silently probe content that was never vouched,
+// so it is rejected with a 400 naming the offending parameter.
+//
 // This turns HumanVouch from a button into infrastructure: a verifiable,
 // machine-payable signal of human authorship for the agent era.
 export default defineEventHandler(async (event) => {
   const cfg = useRuntimeConfig().public as unknown as ChainCfg;
   const q = getQuery(event);
 
-  let contentField: bigint;
-  if (q.hash !== undefined) {
-    if (typeof q.hash !== "string" || !q.hash.length || /[^0-9]/.test(q.hash)) {
-      setResponseStatus(event, 400);
-      return { code: "INVALID_HASH", error: "hash must be a non-negative decimal integer" };
-    }
-    contentField = BigInt(q.hash);
-    if (contentField >= FR) {
-      setResponseStatus(event, 400);
-      return { code: "HASH_OUT_OF_RANGE", error: "hash must be less than the BLS12-381 scalar field modulus" };
-    }
-  } else {
-    const rawContent = String(q.content ?? "");
-    if (Buffer.byteLength(rawContent, "utf8") > 8192) {
-      setResponseStatus(event, 413);
-      return { code: "CONTENT_TOO_LARGE", error: "content exceeds maximum allowed size of 8 KiB" };
-    }
-    contentField = contentToField(rawContent);
+  // getQuery returns a string[] for a repeated parameter; String(["a","b"])
+  // would collapse it to "a,b" and hash a value that was never vouched.
+  if (Array.isArray(q.hash)) {
+    setResponseStatus(event, 400);
+    return { error: "invalid hash: expected a single value, not a repeated parameter" };
   }
+  if (Array.isArray(q.content)) {
+    setResponseStatus(event, 400);
+    return { error: "invalid content: expected a single value, not a repeated parameter" };
+  }
+
+  const contentField =
+    typeof q.hash === "string" && q.hash.length
+      ? BigInt(q.hash)
+      : contentToField(String(q.content ?? ""));
 
   const resource = `/api/v1/attestation?hash=${contentField.toString()}`;
 
