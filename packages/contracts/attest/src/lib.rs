@@ -167,6 +167,30 @@ fn verify_proof(env: &Env, vk: VerificationKey, proof: Proof, pub_signals: Vec<F
     Ok(bls.pairing_check(vp1, vp2))
 }
 
+/// How long a recorded vouch and its nullifier must survive without being touched: ~30 days of
+/// 5-second ledgers. Without an extension both persistent entries would expire after the network's
+/// minimum TTL; an expired nullifier would let the same human vouch again (replay).
+pub const VOUCH_TTL_LEDGERS: u32 = 518_400;
+
+/// One human, one vouch per content: store the nullifier, bump the count, extend both TTLs.
+fn record_vouch(env: &Env, content: BytesN<32>, nullifier: BytesN<32>) -> Result<u32, Error> {
+    let store = env.storage().persistent();
+    let nk = DataKey::Nullifier(content.clone(), nullifier);
+    if store.has(&nk) {
+        return Err(Error::AlreadyVouched);
+    }
+    store.set(&nk, &true);
+
+    let vkey = DataKey::Vouches(content);
+    let count: u32 = store.get(&vkey).unwrap_or(0) + 1;
+    store.set(&vkey, &count);
+
+    let extend_to = VOUCH_TTL_LEDGERS.min(env.storage().max_ttl());
+    store.extend_ttl(&nk, extend_to, extend_to);
+    store.extend_ttl(&vkey, extend_to, extend_to);
+    Ok(count)
+}
+
 #[contract]
 pub struct AttestContract;
 
@@ -236,17 +260,7 @@ impl AttestContract {
             return Err(Error::InvalidProof);
         }
 
-        // one human, one vouch per content
-        let nk = DataKey::Nullifier(content.clone(), nullifier);
-        if env.storage().persistent().has(&nk) {
-            return Err(Error::AlreadyVouched);
-        }
-        env.storage().persistent().set(&nk, &true);
-
-        let vkey = DataKey::Vouches(content);
-        let count: u32 = env.storage().persistent().get(&vkey).unwrap_or(0) + 1;
-        env.storage().persistent().set(&vkey, &count);
-        Ok(count)
+        record_vouch(&env, content, nullifier)
     }
 
     pub fn get_vouches(env: Env, content_hash: BytesN<32>) -> u32 {
@@ -256,3 +270,16 @@ impl AttestContract {
             .unwrap_or(0)
     }
 }
+
+#[cfg(test)]
+mod test {
+    extern crate std;
+
+    #[test]
+    fn test_harness_links() {
+        // The crate now builds as an rlib, so #[cfg(test)] modules link and run.
+    }
+}
+
+#[cfg(test)]
+mod test_ttl;

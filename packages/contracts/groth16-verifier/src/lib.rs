@@ -204,3 +204,13 @@ impl Groth16VerifierContract {
         verify_proof(&env, vk, proof, pub_signals.pub_signals)
     }
 }
+
+#[cfg(test)]
+mod test {
+    extern crate std;
+
+    #[test]
+    fn test_harness_links() {
+        // The crate now builds as an rlib, so #[cfg(test)] modules link and run.
+    }
+}
