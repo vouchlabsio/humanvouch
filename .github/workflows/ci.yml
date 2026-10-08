@@ -128,5 +128,20 @@ jobs:
           '
         if-no-files-found: ignore
         retention-days: 7
+  lockfile:
+    name: lockfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - name: Enable Corepack
+      run: corepack enable
+    - name: Install with an immutable lockfile
+      run: yarn install --immutable --mode=skip-build
+    - name: Fail on lockfile drift
+      run: git diff --exit-code yarn.lock
 permissions:
   contents: read
