@@ -3,7 +3,7 @@
 // x402 payment-challenge path works even where the SDK is heavy to bundle.
 import { createHash } from "node:crypto";
 
-const FR = BigInt(
+export const FR = BigInt(
   "52435875175126190479447740508185965837690552500527637822603658699938581184513",
 );
 

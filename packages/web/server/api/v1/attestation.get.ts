@@ -14,10 +14,20 @@ export default defineEventHandler(async (event) => {
   const cfg = useRuntimeConfig().public as unknown as ChainCfg;
   const q = getQuery(event);
 
-  const contentField =
-    typeof q.hash === "string" && q.hash.length
-      ? BigInt(q.hash)
-      : contentToField(String(q.content ?? ""));
+  let contentField: bigint;
+  if (q.hash !== undefined) {
+    if (typeof q.hash !== "string" || !q.hash.length || /[^0-9]/.test(q.hash)) {
+      setResponseStatus(event, 400);
+      return { code: "INVALID_HASH", error: "hash must be a non-negative decimal integer" };
+    }
+    contentField = BigInt(q.hash);
+    if (contentField >= FR) {
+      setResponseStatus(event, 400);
+      return { code: "HASH_OUT_OF_RANGE", error: "hash must be less than the BLS12-381 scalar field modulus" };
+    }
+  } else {
+    contentField = contentToField(String(q.content ?? ""));
+  }
 
   const resource = `/api/v1/attestation?hash=${contentField.toString()}`;
 
