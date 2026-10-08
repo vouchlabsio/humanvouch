@@ -1,0 +1,4 @@
+# Files allowed above the size-gate limit (1 MiB). One path per line, with the reason.
+demo/humanvouch-demo-narrated.mp4            # narrated walkthrough linked from README (see #96 for moving it out of git)
+packages/web/public/zk/attestation255.zkey   # proving key the browser fetches in lib/zk.js
+packages/web/public/zk/attestation255.wasm   # witness generator the browser fetches in lib/zk.js

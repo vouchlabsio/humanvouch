@@ -143,5 +143,20 @@ jobs:
       run: yarn install --immutable --mode=skip-build
     - name: Fail on lockfile drift
       run: git diff --exit-code yarn.lock
+  size-gate:
+    name: size-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Block oversized files
+      env:
+        BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha
+          || github.event.before }}
+      run: "if [ -z \"$BASE\" ] || [ \"$BASE\" = \"0000000000000000000000000000000000000000\"\
+        \ ]; then\n  BASE=$(git hash-object -t tree /dev/null)\nfi\nscripts/size-gate.sh\
+        \ \"$BASE\" HEAD\n"
 permissions:
   contents: read
