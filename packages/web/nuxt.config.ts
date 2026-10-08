@@ -12,11 +12,14 @@ export default defineNuxtConfig({
   },
   devServer: { port: 58273, host: "127.0.0.1" },
   runtimeConfig: {
+    // Per-IP budget for the abuse-prone public routes (see server/middleware/rate-limit.ts).
+    rateLimitMax: Number(process.env.RATE_LIMIT_MAX) || 10,
+    rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60_000,
     public: {
       attestContractId: "CDPDQJB7HX5XVOUHEDQKV6T7KJXNGVTVH3VDCXMFEE7GPIIINOVO5YZT",
       rpcUrl: "https://soroban-testnet.stellar.org",
       networkPassphrase: "Test SDF Network ; September 2015",
-      readSourcePublicKey: "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7",
+      readSourcePublicKey: "GDTLFJ4P2YYJRVO4ED4YQSC5MXKVXYNZPVZXIF3IB5WRMWRFKCJW7BPE",
     },
   },
   app: {
