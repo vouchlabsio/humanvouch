@@ -20,6 +20,9 @@ use soroban_sdk::{
 
 const VK_KEY: Symbol = symbol_short!("VK");
 const ROOTS: Symbol = symbol_short!("ROOTS");
+/// Registry root history kept by `set_root`: the newest MAX_ROOTS roots stay valid, so a
+/// proof built against a recently replaced root still verifies while storage stays bounded.
+pub const MAX_ROOTS: u32 = 32;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -203,7 +206,8 @@ impl AttestContract {
         Ok(())
     }
 
-    /// Registry issuer publishes a valid Merkle root (idempotent).
+    /// Registry issuer publishes a valid Merkle root (idempotent). Keeps the newest
+    /// `MAX_ROOTS` roots and evicts the oldest beyond that.
     pub fn set_root(env: Env, root: BytesN<32>) {
         let mut roots: Vec<BytesN<32>> =
             env.storage().instance().get(&ROOTS).unwrap_or(Vec::new(&env));
@@ -216,6 +220,9 @@ impl AttestContract {
         }
         if !found {
             roots.push_back(root);
+            while roots.len() > MAX_ROOTS {
+                roots.pop_front(); // evict the oldest root
+            }
             env.storage().instance().set(&ROOTS, &roots);
         }
     }
@@ -283,3 +290,4 @@ mod test {
 
 #[cfg(test)]
 mod test_ttl;
+mod test_bounded_roots;
