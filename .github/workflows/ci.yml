@@ -122,7 +122,7 @@ jobs:
         VERCEL: '1'
     - name: Upload build output on failure
       if: failure()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: web-build-output
         path: 'packages/web/.vercel/output
