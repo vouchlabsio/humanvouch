@@ -214,3 +214,6 @@ mod test {
         // The crate now builds as an rlib, so #[cfg(test)] modules link and run.
     }
 }
+
+#[cfg(test)]
+mod test_verify;
