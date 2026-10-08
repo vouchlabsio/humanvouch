@@ -1,3 +1,6 @@
+// Derived from CircomStellar's proof encoder (https://github.com/jamesbachini/CircomStellar) (MIT License)
+// Copyright (c) 2024 James Bachini
+
 const BYTE_LEN_FQ = 48;
 const BYTE_LEN_U256 = 32;
 

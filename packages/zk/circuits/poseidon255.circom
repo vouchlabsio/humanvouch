@@ -1,3 +1,5 @@
+// Vendored from https://github.com/jmagan/poseidon-bls12381-circom (MIT License)
+// Copyright (c) 2023 Jordi Magán
 pragma circom 2.0.0;
 
 include "./poseidon255_constants.circom";
