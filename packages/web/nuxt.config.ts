@@ -10,6 +10,18 @@ export default defineNuxtConfig({
     // newer target so BigInt literals in the server bundle don't crash
     esbuild: { options: { target: "es2022" } },
   },
+  routeRules: {
+    "/**": {
+      headers: {
+        "Content-Security-Policy":
+          "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://soroban-testnet.stellar.org https://friendbot.stellar.org https://challenges.cloudflare.com; img-src 'self' data:;",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+        "X-Frame-Options": "DENY",
+      },
+    },
+  },
   devServer: { port: 58273, host: "127.0.0.1" },
   runtimeConfig: {
     public: {
