@@ -158,5 +158,24 @@ jobs:
       run: "if [ -z \"$BASE\" ] || [ \"$BASE\" = \"0000000000000000000000000000000000000000\"\
         \ ]; then\n  BASE=$(git hash-object -t tree /dev/null)\nfi\nscripts/size-gate.sh\
         \ \"$BASE\" HEAD\n"
+  summary:
+    name: summary
+    needs:
+    - contracts
+    - circuits
+    - typecheck
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - name: Require every job to succeed
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+      run: "echo \"| job | result |\" >> \"$GITHUB_STEP_SUMMARY\"\necho \"|---|---|\"\
+        \ >> \"$GITHUB_STEP_SUMMARY\"\necho \"$RESULTS\" | jq -r 'to_entries[] | \"\
+        | \\(.key) | \\(.value.result) |\"' >> \"$GITHUB_STEP_SUMMARY\"\nfailed=$(echo\
+        \ \"$RESULTS\" | jq -r '[to_entries[] | select(.value.result != \"success\"\
+        ) | .key] | join(\", \")')\nif [ -n \"$failed\" ]; then\n  echo \"::error::Not\
+        \ successful: $failed\"\n  exit 1\nfi\n"
 permissions:
   contents: read
