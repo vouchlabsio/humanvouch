@@ -1,0 +1,6 @@
+# clippy configuration for the HumanVouch contract crates (packages/contracts).
+#
+# The contract crates are `no_std` and pinned to a minimum supported Rust version
+# (`rust-version = "1.89.0"` in each crate manifest); keep clippy's MSRV in sync
+# so version-gated lints match the toolchain the contracts actually build with.
+msrv = "1.89.0"

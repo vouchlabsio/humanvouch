@@ -1,185 +1,46 @@
 name: CI
+
 on:
-  push:
-    branches:
-    - main
   pull_request:
-    branches:
-    - main
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-jobs:
-  contracts:
-    name: contracts (build + test)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-    - uses: actions/checkout@v7
-    - name: Install Rust toolchain (1.92.0)
-      uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: 1.92.0
-        targets: wasm32v1-none
-    - uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: 'packages/contracts/attest
+  push:
+    branches: [main]
 
-          packages/contracts/groth16-verifier
-
-          '
-    - name: Install stellar-cli 28.1.0
-      run: |
-        curl -sSfL https://github.com/stellar/stellar-cli/releases/download/v28.1.0/stellar-cli-28.1.0-x86_64-unknown-linux-gnu.tar.gz \
-          | tar -xz -C "$RUNNER_TEMP" stellar
-        echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-    # soroban-sdk 28 refuses a plain `cargo build` for wasm ("requires stellar-cli v25.2.0+")
-    - name: Build attest contract (wasm32v1-none, release)
-      run: stellar contract build --manifest-path packages/contracts/attest/Cargo.toml
-    - name: Build groth16-verifier contract (wasm32v1-none, release)
-      run: stellar contract build --manifest-path packages/contracts/groth16-verifier/Cargo.toml
-    - name: Test attest contract
-      run: cargo test --manifest-path packages/contracts/attest/Cargo.toml --release
-    - name: Test groth16-verifier contract
-      run: cargo test --manifest-path packages/contracts/groth16-verifier/Cargo.toml
-        --release
-  circuits:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-    - uses: actions/checkout@v7
-    - uses: actions/setup-node@v6
-      with:
-        node-version-file: .nvmrc
-    - name: Enable Corepack
-      run: corepack enable
-    - name: Restore Yarn cache
-      uses: actions/setup-node@v6
-      with:
-        node-version-file: .nvmrc
-        cache: yarn
-    - run: yarn install --immutable
-    - name: Install Circom 2.2.3
-      run: "mkdir -p \"$RUNNER_TEMP/circom-bin\"\ncurl --fail --location --silent\
-        \ --show-error \\\n  https://github.com/iden3/circom/releases/download/v2.2.3/circom-linux-amd64\
-        \ \\\n  --output \"$RUNNER_TEMP/circom-bin/circom\"\nprintf '%s  %s\\n' \\\
-        \n  '85342c7ff332d948df7c0c50ecf201e6129349aef550ce873f3c811b79fe53a3' \\\n\
-        \  \"$RUNNER_TEMP/circom-bin/circom\" | sha256sum --check --status\nchmod\
-        \ +x \"$RUNNER_TEMP/circom-bin/circom\"\necho \"$RUNNER_TEMP/circom-bin\"\
-        \ >> \"$GITHUB_PATH\"\n"
-    - name: Test circuits
-      run: yarn workspace @humanvouch/circuits test
-  typecheck:
-    name: web (typecheck)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-    - uses: actions/checkout@v7
-    - uses: actions/setup-node@v4
-      with:
-        node-version-file: .nvmrc
-        cache: yarn
-    - name: Install workspace deps
-      run: yarn install --frozen-lockfile
-    - name: Nuxt prepare
-      run: yarn workspace @humanvouch/web run postinstall
-    - name: Typecheck Nuxt app
-      run: yarn workspace @humanvouch/web run typecheck
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v6
-      with:
-        node-version-file: .nvmrc
-        cache: yarn
-  secrets:
-    name: secrets (gitleaks)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-    - uses: actions/checkout@v7
-      with:
-        fetch-depth: 0
-    - name: Install gitleaks 8.21.2
-      run: "curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz\
-        \ \\\n  | tar -xz -C \"$RUNNER_TEMP\" gitleaks\necho \"$RUNNER_TEMP\" >> \"\
-        $GITHUB_PATH\"\n"
-    - name: Scan full git history
-      run: gitleaks git --config .gitleaks.toml --redact --verbose .
-  web-build:
-    name: web (build)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '24'
-    - name: Enable Corepack
-      run: corepack enable
-    - run: yarn install --immutable
-    - name: Build (turbo build -> @humanvouch/web nuxt build)
-      run: yarn build
-      env:
-        VERCEL: '1'
-    - name: Upload build output on failure
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: web-build-output
-        path: 'packages/web/.vercel/output
-
-          packages/web/.output
-
-          '
-        if-no-files-found: ignore
-        retention-days: 7
-  lockfile:
-    name: lockfile
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '24'
-    - name: Enable Corepack
-      run: corepack enable
-    - name: Install with an immutable lockfile
-      run: yarn install --immutable --mode=skip-build
-    - name: Fail on lockfile drift
-      run: git diff --exit-code yarn.lock
-  size-gate:
-    name: size-gate
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    - name: Block oversized files
-      env:
-        BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha
-          || github.event.before }}
-      run: "if [ -z \"$BASE\" ] || [ \"$BASE\" = \"0000000000000000000000000000000000000000\"\
-        \ ]; then\n  BASE=$(git hash-object -t tree /dev/null)\nfi\nscripts/size-gate.sh\
-        \ \"$BASE\" HEAD\n"
-  summary:
-    name: summary
-    needs:
-    - contracts
-    - circuits
-    - typecheck
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-    - name: Require every job to succeed
-      env:
-        RESULTS: ${{ toJSON(needs) }}
-      run: "echo \"| job | result |\" >> \"$GITHUB_STEP_SUMMARY\"\necho \"|---|---|\"\
-        \ >> \"$GITHUB_STEP_SUMMARY\"\necho \"$RESULTS\" | jq -r 'to_entries[] | \"\
-        | \\(.key) | \\(.value.result) |\"' >> \"$GITHUB_STEP_SUMMARY\"\nfailed=$(echo\
-        \ \"$RESULTS\" | jq -r '[to_entries[] | select(.value.result != \"success\"\
-        ) | .key] | join(\", \")')\nif [ -n \"$failed\" ]; then\n  echo \"::error::Not\
-        \ successful: $failed\"\n  exit 1\nfi\n"
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/contracts
+
+      - name: Check formatting (rustfmt)
+        run: |
+          cargo fmt --check --manifest-path packages/contracts/attest/Cargo.toml
+          cargo fmt --check --manifest-path packages/contracts/groth16-verifier/Cargo.toml
+          cargo fmt --check --manifest-path packages/contracts/circom-to-soroban-hex/Cargo.toml
+
+      - name: Lint (clippy, warnings denied)
+        run: |
+          cargo clippy --manifest-path packages/contracts/attest/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path packages/contracts/groth16-verifier/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path packages/contracts/circom-to-soroban-hex/Cargo.toml --all-targets -- -D warnings

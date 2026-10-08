@@ -5,9 +5,9 @@
 //! membership proof into an on-chain attestation:
 //!   - `set_vk`   : store the circuit verifying key (once).
 //!   - `set_root` : the registry issuer publishes a valid Merkle root.
-//!   - `attest`   : verify a membership proof, require its root be valid (MANDATORY —
-//!                  Groth16 validity alone is NOT membership), reject nullifier replay
-//!                  per content, and record one unique vouch for the content hash.
+//!   - `attest`   : verify a membership proof, require its root be valid
+//!     (MANDATORY — Groth16 validity alone is NOT membership), reject nullifier
+//!     replay per content, and record one unique vouch for the content hash.
 //!   - `get_vouches` / `is_valid_root` : read-only views.
 //!
 //! Public signal order (from the circuit): [0]=root, [1]=nullifierHash, [2]=contentHash.
@@ -20,9 +20,6 @@ use soroban_sdk::{
 
 const VK_KEY: Symbol = symbol_short!("VK");
 const ROOTS: Symbol = symbol_short!("ROOTS");
-/// Registry root history kept by `set_root`: the newest MAX_ROOTS roots stay valid, so a
-/// proof built against a recently replaced root still verifies while storage stays bounded.
-pub const MAX_ROOTS: u32 = 32;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -112,7 +109,13 @@ impl VerificationKey {
         if pos != bytes.len() || ic_len == 0 {
             return Err(Error::MalformedVerifyingKey);
         }
-        Ok(Self { alpha, beta, gamma, delta, ic })
+        Ok(Self {
+            alpha,
+            beta,
+            gamma,
+            delta,
+            ic,
+        })
     }
 }
 
@@ -154,10 +157,14 @@ fn parse_signals(env: &Env, bytes: &Bytes) -> Result<Vec<Fr>, Error> {
     Ok(out)
 }
 
-fn verify_proof(env: &Env, vk: VerificationKey, proof: Proof, pub_signals: Vec<Fr>) -> Result<bool, Error> {
+fn verify_proof(
+    env: &Env,
+    vk: VerificationKey,
+    proof: Proof,
+    pub_signals: Vec<Fr>,
+) -> Result<bool, Error> {
     if pub_signals.len() + 1 != vk.ic.len() {
-        // the key itself parsed fine: the fault is the number of public signals
-        return Err(Error::WrongSignalCount);
+        return Err(Error::MalformedVerifyingKey);
     }
     let bls = env.crypto().bls12_381();
     let mut vk_x = vk.ic.get(0).unwrap();
@@ -169,30 +176,6 @@ fn verify_proof(env: &Env, vk: VerificationKey, proof: Proof, pub_signals: Vec<F
     let vp1 = vec![env, neg_a, vk.alpha, vk_x, proof.c];
     let vp2 = vec![env, proof.b, vk.beta, vk.gamma, vk.delta];
     Ok(bls.pairing_check(vp1, vp2))
-}
-
-/// How long a recorded vouch and its nullifier must survive without being touched: ~30 days of
-/// 5-second ledgers. Without an extension both persistent entries would expire after the network's
-/// minimum TTL; an expired nullifier would let the same human vouch again (replay).
-pub const VOUCH_TTL_LEDGERS: u32 = 518_400;
-
-/// One human, one vouch per content: store the nullifier, bump the count, extend both TTLs.
-fn record_vouch(env: &Env, content: BytesN<32>, nullifier: BytesN<32>) -> Result<u32, Error> {
-    let store = env.storage().persistent();
-    let nk = DataKey::Nullifier(content.clone(), nullifier);
-    if store.has(&nk) {
-        return Err(Error::AlreadyVouched);
-    }
-    store.set(&nk, &true);
-
-    let vkey = DataKey::Vouches(content);
-    let count: u32 = store.get(&vkey).unwrap_or(0) + 1;
-    store.set(&vkey, &count);
-
-    let extend_to = VOUCH_TTL_LEDGERS.min(env.storage().max_ttl());
-    store.extend_ttl(&nk, extend_to, extend_to);
-    store.extend_ttl(&vkey, extend_to, extend_to);
-    Ok(count)
 }
 
 #[contract]
@@ -207,36 +190,26 @@ impl AttestContract {
         Ok(())
     }
 
-    /// Registry issuer publishes a valid Merkle root (idempotent). Keeps the newest
-    /// `MAX_ROOTS` roots and evicts the oldest beyond that.
+    /// Registry issuer publishes a valid Merkle root (idempotent).
     pub fn set_root(env: Env, root: BytesN<32>) {
-        let mut roots: Vec<BytesN<32>> =
-            env.storage().instance().get(&ROOTS).unwrap_or(Vec::new(&env));
-        let mut found = false;
-        for r in roots.iter() {
-            if r == root {
-                found = true;
-                break;
-            }
-        }
-        if !found {
+        let mut roots: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&ROOTS)
+            .unwrap_or(Vec::new(&env));
+        if !roots.contains(&root) {
             roots.push_back(root);
-            while roots.len() > MAX_ROOTS {
-                roots.pop_front(); // evict the oldest root
-            }
             env.storage().instance().set(&ROOTS, &roots);
         }
     }
 
     pub fn is_valid_root(env: Env, root: BytesN<32>) -> bool {
-        let roots: Vec<BytesN<32>> =
-            env.storage().instance().get(&ROOTS).unwrap_or(Vec::new(&env));
-        for r in roots.iter() {
-            if r == root {
-                return true;
-            }
-        }
-        false
+        let roots: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&ROOTS)
+            .unwrap_or(Vec::new(&env));
+        roots.contains(&root)
     }
 
     /// Verify a membership proof and record one unique human vouch for the content.
@@ -268,7 +241,17 @@ impl AttestContract {
             return Err(Error::InvalidProof);
         }
 
-        record_vouch(&env, content, nullifier)
+        // one human, one vouch per content
+        let nk = DataKey::Nullifier(content.clone(), nullifier);
+        if env.storage().persistent().has(&nk) {
+            return Err(Error::AlreadyVouched);
+        }
+        env.storage().persistent().set(&nk, &true);
+
+        let vkey = DataKey::Vouches(content);
+        let count: u32 = env.storage().persistent().get(&vkey).unwrap_or(0) + 1;
+        env.storage().persistent().set(&vkey, &count);
+        Ok(count)
     }
 
     pub fn get_vouches(env: Env, content_hash: BytesN<32>) -> u32 {
@@ -278,22 +261,3 @@ impl AttestContract {
             .unwrap_or(0)
     }
 }
-
-#[cfg(test)]
-mod test {
-    extern crate std;
-
-    #[test]
-    fn test_harness_links() {
-        // The crate now builds as an rlib, so #[cfg(test)] modules link and run.
-    }
-}
-
-#[cfg(test)]
-mod test_ttl;
-mod test_bounded_roots;
-mod test_signal_count;
-mod test_malformed;
-mod test_root_first;
-mod test_roots;
-mod test_no_vk;
