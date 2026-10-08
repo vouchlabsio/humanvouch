@@ -15,23 +15,21 @@ export default defineEventHandler(async (event) => {
   const q = getQuery(event);
 
   let contentField: bigint;
-  if (q.hash !== undefined) {
-    if (typeof q.hash !== "string" || !q.hash.length || /[^0-9]/.test(q.hash)) {
+  if (typeof q.hash === "string" && q.hash.length) {
+    // Must be a canonical, non-negative BLS12-381 scalar. Letting BigInt() throw
+    // on bad input surfaces as a 500, and "-1" would encode as a malformed value.
+    if (!/^[0-9]+$/.test(q.hash)) {
       setResponseStatus(event, 400);
-      return { code: "INVALID_HASH", error: "hash must be a non-negative decimal integer" };
+      return { error: "invalid hash: expected a non-negative decimal field element" };
     }
-    contentField = BigInt(q.hash);
-    if (contentField >= FR) {
+    const hash = BigInt(q.hash);
+    if (hash >= FR) {
       setResponseStatus(event, 400);
-      return { code: "HASH_OUT_OF_RANGE", error: "hash must be less than the BLS12-381 scalar field modulus" };
+      return { error: "invalid hash: value must be below the BLS12-381 scalar field prime" };
     }
+    contentField = hash;
   } else {
-    const rawContent = String(q.content ?? "");
-    if (Buffer.byteLength(rawContent, "utf8") > 8192) {
-      setResponseStatus(event, 413);
-      return { code: "CONTENT_TOO_LARGE", error: "content exceeds maximum allowed size of 8 KiB" };
-    }
-    contentField = contentToField(rawContent);
+    contentField = contentToField(String(q.content ?? ""));
   }
 
   const resource = `/api/v1/attestation?hash=${contentField.toString()}`;
