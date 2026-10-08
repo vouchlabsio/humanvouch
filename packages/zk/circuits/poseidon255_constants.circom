@@ -1,4 +1,6 @@
 
+// Vendored from https://github.com/jmagan/poseidon-bls12381-circom (MIT License)
+// Copyright (c) 2023 Jordi Magán
 pragma circom 2.0.0;
 
 // This pareameters are genereated: sage generate_params_poseidon.sage 1 0 255 t 5 128 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
