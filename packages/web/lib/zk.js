@@ -2,6 +2,7 @@
 // proof with snarkjs, and encode it to the contract's byte format.
 import * as snarkjs from "snarkjs";
 import { proofToHex, publicSignalsToHex } from "./snarkHex.js";
+import { normalizeContent } from "./normalize.js";
 
 const FR = 52435875175126190479447740508185965837690552500527637822603658699938581184513n;
 
@@ -12,8 +13,11 @@ export async function loadRegistry() {
 }
 
 // SHA-256(content) reduced into the BLS12-381 scalar field — matches the circuit's contentHash.
+// Content is canonicalized first so equivalent text (platform reformatting, CRLF,
+// decomposed Unicode, HTML/markdown chrome) hashes identically on both sides.
 export async function contentHashField(text) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  const normalized = normalizeContent(text);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
   const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
   return BigInt("0x" + hex) % FR;
 }
