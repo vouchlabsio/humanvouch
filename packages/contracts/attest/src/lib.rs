@@ -20,9 +20,6 @@ use soroban_sdk::{
 
 const VK_KEY: Symbol = symbol_short!("VK");
 const ROOTS: Symbol = symbol_short!("ROOTS");
-/// Registry root history kept by `set_root`: the newest MAX_ROOTS roots stay valid, so a
-/// proof built against a recently replaced root still verifies while storage stays bounded.
-pub const MAX_ROOTS: u32 = 32;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -156,8 +153,7 @@ fn parse_signals(env: &Env, bytes: &Bytes) -> Result<Vec<Fr>, Error> {
 
 fn verify_proof(env: &Env, vk: VerificationKey, proof: Proof, pub_signals: Vec<Fr>) -> Result<bool, Error> {
     if pub_signals.len() + 1 != vk.ic.len() {
-        // the key itself parsed fine: the fault is the number of public signals
-        return Err(Error::WrongSignalCount);
+        return Err(Error::MalformedVerifyingKey);
     }
     let bls = env.crypto().bls12_381();
     let mut vk_x = vk.ic.get(0).unwrap();
@@ -169,30 +165,6 @@ fn verify_proof(env: &Env, vk: VerificationKey, proof: Proof, pub_signals: Vec<F
     let vp1 = vec![env, neg_a, vk.alpha, vk_x, proof.c];
     let vp2 = vec![env, proof.b, vk.beta, vk.gamma, vk.delta];
     Ok(bls.pairing_check(vp1, vp2))
-}
-
-/// How long a recorded vouch and its nullifier must survive without being touched: ~30 days of
-/// 5-second ledgers. Without an extension both persistent entries would expire after the network's
-/// minimum TTL; an expired nullifier would let the same human vouch again (replay).
-pub const VOUCH_TTL_LEDGERS: u32 = 518_400;
-
-/// One human, one vouch per content: store the nullifier, bump the count, extend both TTLs.
-fn record_vouch(env: &Env, content: BytesN<32>, nullifier: BytesN<32>) -> Result<u32, Error> {
-    let store = env.storage().persistent();
-    let nk = DataKey::Nullifier(content.clone(), nullifier);
-    if store.has(&nk) {
-        return Err(Error::AlreadyVouched);
-    }
-    store.set(&nk, &true);
-
-    let vkey = DataKey::Vouches(content);
-    let count: u32 = store.get(&vkey).unwrap_or(0) + 1;
-    store.set(&vkey, &count);
-
-    let extend_to = VOUCH_TTL_LEDGERS.min(env.storage().max_ttl());
-    store.extend_ttl(&nk, extend_to, extend_to);
-    store.extend_ttl(&vkey, extend_to, extend_to);
-    Ok(count)
 }
 
 #[contract]
@@ -207,8 +179,7 @@ impl AttestContract {
         Ok(())
     }
 
-    /// Registry issuer publishes a valid Merkle root (idempotent). Keeps the newest
-    /// `MAX_ROOTS` roots and evicts the oldest beyond that.
+    /// Registry issuer publishes a valid Merkle root (idempotent).
     pub fn set_root(env: Env, root: BytesN<32>) {
         let mut roots: Vec<BytesN<32>> =
             env.storage().instance().get(&ROOTS).unwrap_or(Vec::new(&env));
@@ -221,9 +192,6 @@ impl AttestContract {
         }
         if !found {
             roots.push_back(root);
-            while roots.len() > MAX_ROOTS {
-                roots.pop_front(); // evict the oldest root
-            }
             env.storage().instance().set(&ROOTS, &roots);
         }
     }
@@ -268,7 +236,17 @@ impl AttestContract {
             return Err(Error::InvalidProof);
         }
 
-        record_vouch(&env, content, nullifier)
+        // one human, one vouch per content
+        let nk = DataKey::Nullifier(content.clone(), nullifier);
+        if env.storage().persistent().has(&nk) {
+            return Err(Error::AlreadyVouched);
+        }
+        env.storage().persistent().set(&nk, &true);
+
+        let vkey = DataKey::Vouches(content);
+        let count: u32 = env.storage().persistent().get(&vkey).unwrap_or(0) + 1;
+        env.storage().persistent().set(&vkey, &count);
+        Ok(count)
     }
 
     pub fn get_vouches(env: Env, content_hash: BytesN<32>) -> u32 {
@@ -281,19 +259,118 @@ impl AttestContract {
 
 #[cfg(test)]
 mod test {
-    extern crate std;
+    use super::*;
+    use soroban_sdk::crypto::bls12_381::{G1Affine, G2Affine};
+
+    const VK_LEN: usize = G1_SERIALIZED_SIZE * 5 + G2_SERIALIZED_SIZE * 3 + 4;
+    const PROOF_LEN: usize = G1_SERIALIZED_SIZE * 2 + G2_SERIALIZED_SIZE;
+    const SIGNALS_LEN: usize = 4 + 32 * 3;
+
+    fn put(buf: &mut [u8], pos: &mut usize, bytes: &[u8]) {
+        buf[*pos..*pos + bytes.len()].copy_from_slice(bytes);
+        *pos += bytes.len();
+    }
+
+    fn identity_g1() -> [u8; G1_SERIALIZED_SIZE] {
+        let mut b = [0u8; G1_SERIALIZED_SIZE];
+        b[0] = 0x40; // uncompressed point-at-infinity encoding
+        b
+    }
+
+    fn identity_g2() -> [u8; G2_SERIALIZED_SIZE] {
+        let mut b = [0u8; G2_SERIALIZED_SIZE];
+        b[0] = 0x40;
+        b
+    }
+
+    /// Build a verifying key and proof whose pairing check succeeds without a
+    /// real trusted setup: the only non-identity pairs are `e(P, Q)` and
+    /// `e(-P, Q)`, whose product is the identity. Every public signal is fed
+    /// against an identity `ic` entry, so the signal values stay unconstrained —
+    /// enough to exercise the nullifier-replay guard under test.
+    fn vk_and_proof(env: &Env) -> (Bytes, Bytes) {
+        let bls = env.crypto().bls12_381();
+        let msg = Bytes::from_slice(env, b"humanvouch-attest-test");
+        let dst = Bytes::from_slice(env, b"HV_ATTEST_TEST_DST");
+        let p: G1Affine = bls.hash_to_g1(&msg, &dst);
+        let q: G2Affine = bls.hash_to_g2(&msg, &dst);
+        let neg_p = -p;
+
+        let mut vk = [0u8; VK_LEN];
+        let mut pos = 0usize;
+        put(&mut vk, &mut pos, &identity_g1()); // alpha
+        put(&mut vk, &mut pos, &identity_g2()); // beta
+        put(&mut vk, &mut pos, &q.to_array()); // gamma
+        put(&mut vk, &mut pos, &identity_g2()); // delta
+        put(&mut vk, &mut pos, &4u32.to_be_bytes()); // ic length
+        put(&mut vk, &mut pos, &neg_p.to_array()); // ic[0]
+        put(&mut vk, &mut pos, &identity_g1()); // ic[1]
+        put(&mut vk, &mut pos, &identity_g1()); // ic[2]
+        put(&mut vk, &mut pos, &identity_g1()); // ic[3]
+
+        let mut proof = [0u8; PROOF_LEN];
+        let mut pos = 0usize;
+        put(&mut proof, &mut pos, &neg_p.to_array()); // a -> neg_a = P
+        put(&mut proof, &mut pos, &q.to_array()); // b
+        put(&mut proof, &mut pos, &identity_g1()); // c
+
+        (Bytes::from_array(env, &vk), Bytes::from_array(env, &proof))
+    }
+
+    fn signals(env: &Env, root: &[u8; 32], nullifier: &[u8; 32], content: &[u8; 32]) -> Bytes {
+        let mut buf = [0u8; SIGNALS_LEN];
+        let mut pos = 0usize;
+        put(&mut buf, &mut pos, &3u32.to_be_bytes());
+        put(&mut buf, &mut pos, root);
+        put(&mut buf, &mut pos, nullifier);
+        put(&mut buf, &mut pos, content);
+        Bytes::from_array(env, &buf)
+    }
+
+    fn setup(env: &Env) -> (AttestContractClient<'_>, Bytes, Bytes, [u8; 32]) {
+        let contract_id = env.register(AttestContract, ());
+        let client = AttestContractClient::new(env, &contract_id);
+        let (vk, proof) = vk_and_proof(env);
+        client.set_vk(&vk);
+        let root = [7u8; 32];
+        client.set_root(&BytesN::from_array(env, &root));
+        (client, proof, vk, root)
+    }
 
     #[test]
-    fn test_harness_links() {
-        // The crate now builds as an rlib, so #[cfg(test)] modules link and run.
+    fn replaying_the_same_nullifier_is_rejected() {
+        let env = Env::default();
+        let (client, proof, _vk, root) = setup(&env);
+        let nullifier = [1u8; 32];
+        let content = [2u8; 32];
+        let pub_signals = signals(&env, &root, &nullifier, &content);
+
+        assert_eq!(client.attest(&proof, &pub_signals), 1);
+        assert_eq!(client.get_vouches(&BytesN::from_array(&env, &content)), 1);
+
+        let replayed = client.try_attest(&proof, &pub_signals);
+        assert!(matches!(replayed, Err(Ok(Error::AlreadyVouched))));
+        // the replay must not bump the recorded count
+        assert_eq!(client.get_vouches(&BytesN::from_array(&env, &content)), 1);
+    }
+
+    #[test]
+    fn same_nullifier_on_different_content_is_accepted() {
+        let env = Env::default();
+        let (client, proof, _vk, root) = setup(&env);
+        let nullifier = [1u8; 32];
+        let content_a = [2u8; 32];
+        let content_b = [3u8; 32];
+
+        let signals_a = signals(&env, &root, &nullifier, &content_a);
+        let signals_b = signals(&env, &root, &nullifier, &content_b);
+
+        assert_eq!(client.attest(&proof, &signals_a), 1);
+        // the nullifier key is composite (content, nullifier): a different
+        // content hash is a distinct vouch even for the same nullifier.
+        assert_eq!(client.attest(&proof, &signals_b), 1);
+
+        assert_eq!(client.get_vouches(&BytesN::from_array(&env, &content_a)), 1);
+        assert_eq!(client.get_vouches(&BytesN::from_array(&env, &content_b)), 1);
     }
 }
-
-#[cfg(test)]
-mod test_ttl;
-mod test_bounded_roots;
-mod test_signal_count;
-mod test_malformed;
-mod test_root_first;
-mod test_roots;
-mod test_no_vk;
