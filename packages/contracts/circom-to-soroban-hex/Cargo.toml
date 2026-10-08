@@ -6,7 +6,7 @@ publish = false
 rust-version = "1.89.0"
 
 [dependencies]
-ark-bls12-381 = "0.4.0"
+ark-bls12-381 = "0.6.0"
 ark-serialize = "0.4.2"
 hex = "0.4.3"
 num-bigint = "0.4.6"
