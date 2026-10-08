@@ -1,6 +1,3 @@
-// Derived from CircomStellar's proof encoder (https://github.com/jamesbachini/CircomStellar) (MIT License)
-// Copyright (c) 2024 James Bachini
-
 const BYTE_LEN_FQ = 48;
 const BYTE_LEN_U256 = 32;
 
@@ -35,14 +32,18 @@ function g1Hex(point) {
 
 function g2Hex(point) {
   const [x, y] = point;
-  const [x1, x2] = x;
-  const [y1, y2] = y;
-  // snarkjs emits Fq2 limbs in Solidity-friendly order [c1, c0].
-  // Soroban expects Arkworks uncompressed encoding, which serializes limbs as [c0, c1].
+  const [x0, x1] = x;
+  const [y0, y1] = y;
+  // snarkjs emits Fq2 limbs in mathematical order [c0, c1]. Soroban expects the
+  // Arkworks uncompressed encoding, which serializes each Fq2 as c0 then c1 — the
+  // same order the `circom-to-soroban-hex` reference converter produces (it builds
+  // Fq2::new(pi_b[0][0], pi_b[0][1]) and lets `serialize_uncompressed` emit c0, c1).
+  // The Solidity-friendly [c1, c0] swap belongs only to the EVM pairing precompile,
+  // so no reordering happens here. See test/snarkHex.test.js.
   return (
-    toFixedHexFromDecimal(x2, BYTE_LEN_FQ) +
+    toFixedHexFromDecimal(x0, BYTE_LEN_FQ) +
     toFixedHexFromDecimal(x1, BYTE_LEN_FQ) +
-    toFixedHexFromDecimal(y2, BYTE_LEN_FQ) +
+    toFixedHexFromDecimal(y0, BYTE_LEN_FQ) +
     toFixedHexFromDecimal(y1, BYTE_LEN_FQ)
   );
 }
@@ -67,15 +68,7 @@ export function publicSignalsToHex(publicSignals) {
 }
 
 export function cleanHex(value) {
-  if (typeof value !== "string") {
-    throw new TypeError(`Expected hex string, received ${typeof value}`);
-  }
-  const clean = value.trim().toLowerCase().replace(/^0x/, "").replace(/\s+/g, "");
-  const invalidMatch = clean.match(/[^0-9a-f]/u);
-  if (invalidMatch) {
-    throw new Error(`Invalid hex character: "${invalidMatch[0]}" at index ${invalidMatch.index}`);
-  }
-  return clean;
+  return value.trim().toLowerCase().replace(/^0x/, "").replace(/\s+/g, "");
 }
 
 export function hexToBytes(hex) {
