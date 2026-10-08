@@ -56,8 +56,8 @@ exactly the distinction most hackathon entries in this space will get wrong.
 
 ```
 [Enrollment off-chain]        [Circom circuit]          [Soroban]                 [App: Nuxt + Express]
- human → commitment      →     prove membership     →    RegistryContract    ←     author: hash + proof + submit
- issuer → Merkle tree          + content nullifier        AttestContract            reader: paste URL → fetch
+ human → commitment      →     prove membership     →    AttestContract      ←     author: hash + proof + submit
+ issuer → Merkle tree          + content nullifier        (root registry +          reader: paste URL → fetch
  root  → on-chain (Groth16)                              (verify+replay+record)            → normalize → hash → query
 ```
 
@@ -65,8 +65,8 @@ Four components + a consumption layer.
 
 ### 4.1 Personhood Registry (mock issuer + on-chain root)
 - Off-chain: each human generates `identitySecret`; `commitment = Poseidon(identitySecret)`.
-- Issuer (us, for demo) inserts commitments into a Poseidon Merkle tree; publishes `root` to a Soroban
-  `RegistryContract`. Pre-enroll N demo humans before recording the video.
+- Issuer (us, for demo) inserts commitments into a Poseidon Merkle tree; publishes `root` to the Soroban
+  `AttestContract` root registry via `set_root`. Pre-enroll N demo humans before recording the video.
 - README states production replaces this with World ID / Self protocol.
 
 ### 4.2 Attestation Circuit (Circom) — the core
@@ -92,9 +92,15 @@ Artifacts produced by trusted setup (Groth16): `.wasm`, `.zkey`, `verification_k
 snarkjs (proof gen) and exported to the Soroban verifier (verifying key).
 
 ### 4.3 Soroban contracts (Rust)
-**`RegistryContract`**
-- Stores current Merkle `root` and a small history of valid roots (so proofs against a recent root stay valid).
-- `update_root(new_root)` — admin (issuer) only.
+**Root registry (shipped inside `AttestContract`)**
+
+> **As built:** no standalone `RegistryContract` exists. The registry is part of `AttestContract`
+> (`packages/contracts/attest/src/lib.rs`): valid roots are kept in the `ROOTS` vector in instance
+> storage; `set_root(root)` appends a root if it is new and `is_valid_root(root) -> bool` checks
+> membership. In the demo `set_root` is not restricted to an admin and the root history is not bounded.
+
+- Stores the valid Merkle roots (so proofs against an earlier root stay valid).
+- `set_root(root)` — publishes a root (planned as `update_root`, admin/issuer only).
 - `is_valid_root(root) -> bool`.
 
 **`AttestContract`** (embeds the Groth16 verifier from `soroban-examples/groth16_verifier`)
@@ -112,7 +118,7 @@ snarkjs (proof gen) and exported to the Soroban verifier (verifying key).
 > written elsewhere in this doc for readability).
 
 - `attest(proof, publicSignals)` where `publicSignals = [root, nullifierHash, contentHash]`:
-  1. `RegistryContract.is_valid_root(publicSignals[0])` — else reject. **(mandatory membership check)**
+  1. `is_valid_root(publicSignals[0])` (same contract, see root registry above) — else reject. **(mandatory membership check)**
   2. Verify Groth16 proof against the circuit's verifying key — else reject.
   3. `nullifierHash` (`publicSignals[1]`) not already used for this `contentHash` (`publicSignals[2]`) — else reject (anti-replay).
   4. Record: `contentHash → unique_human_count++`, store `(contentHash, nullifierHash)` used-set, timestamp.
@@ -231,7 +237,7 @@ State this disclaimer in the demo video and README.
 
 **MUST**
 - Circom circuit (Merkle inclusion + content nullifier) + Groth16 trusted setup + artifacts.
-- `RegistryContract` + `AttestContract` (verify + valid-root + replay guard + record + view) on testnet.
+- `AttestContract` with built-in root registry (verify + valid-root + replay guard + record + view) on testnet. ✅ (no separate `RegistryContract`)
 - Enrollment script (mock issuer) + proof-gen path (API/snarkjs).
 - API: submit attestation, query vouches ✅ (Nitro routes / browser). Medium adapter ❌ not built (§5.1). Canonical normalization ❌ not built (§5.2).
 - Nuxt verifier page (canonical content + vouch count + live check) + author submit UI.

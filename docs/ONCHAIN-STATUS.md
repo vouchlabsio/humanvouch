@@ -31,7 +31,7 @@ Last updated: 2026-10-08
   `poseidon255.circom` + `poseidon255_constants.circom` (jmagan, BLS12-381 Poseidon).
 - `packages/zk/attest-spike.js` — off-chain registry + Merkle + witness builder (wasm-oracle).
 - `packages/contracts/groth16-verifier/` — the working BLS12-381 Groth16 verifier (from
-  CircomStellar, MIT). To be extended into RegistryContract + AttestContract.
+  CircomStellar, MIT). Extended into AttestContract, which also holds the root registry.
 - `packages/contracts/circom-to-soroban-hex/` — encodes snarkjs vk/proof/public → contract hex.
 
 Build artifacts (`build/`, `target/`, `*.zkey`, `*.ptau`) are gitignored and regenerated.
@@ -48,6 +48,13 @@ Build artifacts (`build/`, `target/`, `*.zkey`, `*.ptau`) are gitignored and reg
    - **Wallet:** the demo does **not** use Stellar Wallets Kit. `connectWallet` in
      `packages/web/lib/stellar.js` generates a built-in testnet keypair in the browser, funds it via
      Friendbot and keeps it in `localStorage`. Wallets Kit (user-owned wallets) remains the production path.
+1. ~~**AttestContract + root registry**~~ ✅ DONE — `packages/contracts/attest/`, deployed +
+   proven on testnet (see above). No separate `RegistryContract` was built: the root registry lives
+   inside `AttestContract` (`packages/contracts/attest/src/lib.rs`) as the `ROOTS` vector in instance
+   storage, written by `set_root` and read by `is_valid_root`, which `attest` calls before verifying.
+2. **Frontend wiring**: author flow (paste content → SHA256→field → browser generates proof via
+   snarkjs wasm + the attestation zkey → submit `attest` tx) and verifier flow (`get_vouches`).
+   Wallet connect via Stellar Wallets Kit. Replace the static landing CTAs.
 3. ~~**Deploy**~~ ✅ DONE — Nuxt + nitro server routes on Vercel via `packages/web/scripts/deploy.sh`;
    contracts on testnet. See [README → Deploy](../README.md#deploy).
 4. **Content index**: a persistent content index (planned on Turso) is not built yet.
