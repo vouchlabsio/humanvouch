@@ -1,12 +1,11 @@
 // Off-chain: build a REAL Poseidon-bls12381 Merkle registry + membership witness,
 // using the compiled hasher wasms as the hashing oracle (guarantees the off-chain
 // hashes match the circuit exactly). No mocked values anywhere.
+import { sha256ToField } from "../../web/lib/field.js";
+
 const fs = require("fs");
-const crypto = require("crypto");
 
 const CIRC = __dirname;
-const Fr =
-  52435875175126190479447740508185965837690552500527637822603658699938581184513n;
 const DEPTH = 10;
 
 async function loadHasher(name) {
@@ -15,11 +14,6 @@ async function loadHasher(name) {
   const wc = await builder(wasm);
   return async (inputs) =>
     (await wc.calculateWitness({ in: inputs.map((x) => x.toString()) }, 0))[1];
-}
-
-function sha256ToField(str) {
-  const h = crypto.createHash("sha256").update(str).digest("hex");
-  return BigInt("0x" + h) % Fr;
 }
 
 (async () => {
