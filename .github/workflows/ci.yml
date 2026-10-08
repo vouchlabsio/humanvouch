@@ -100,5 +100,33 @@ jobs:
         $GITHUB_PATH\"\n"
     - name: Scan full git history
       run: gitleaks git --config .gitleaks.toml --redact --verbose .
+  web-build:
+    name: web (build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - name: Enable Corepack
+      run: corepack enable
+    - run: yarn install --immutable
+    - name: Build (turbo build -> @humanvouch/web nuxt build)
+      run: yarn build
+      env:
+        VERCEL: '1'
+    - name: Upload build output on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: web-build-output
+        path: 'packages/web/.vercel/output
+
+          packages/web/.output
+
+          '
+        if-no-files-found: ignore
+        retention-days: 7
 permissions:
   contents: read
