@@ -16,10 +16,10 @@ jobs:
     timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
-    - name: Install Rust toolchain (1.91.0)
+    - name: Install Rust toolchain (1.92.0)
       uses: dtolnay/rust-toolchain@master
       with:
-        toolchain: 1.91.0
+        toolchain: 1.92.0
         targets: wasm32v1-none
     - uses: Swatinem/rust-cache@v2
       with:
@@ -28,12 +28,16 @@ jobs:
           packages/contracts/groth16-verifier
 
           '
+    - name: Install stellar-cli 28.1.0
+      run: |
+        curl -sSfL https://github.com/stellar/stellar-cli/releases/download/v28.1.0/stellar-cli-28.1.0-x86_64-unknown-linux-gnu.tar.gz \
+          | tar -xz -C "$RUNNER_TEMP" stellar
+        echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+    # soroban-sdk 28 refuses a plain `cargo build` for wasm ("requires stellar-cli v25.2.0+")
     - name: Build attest contract (wasm32v1-none, release)
-      run: cargo build --manifest-path packages/contracts/attest/Cargo.toml --target
-        wasm32v1-none --release
+      run: stellar contract build --manifest-path packages/contracts/attest/Cargo.toml
     - name: Build groth16-verifier contract (wasm32v1-none, release)
-      run: cargo build --manifest-path packages/contracts/groth16-verifier/Cargo.toml
-        --target wasm32v1-none --release
+      run: stellar contract build --manifest-path packages/contracts/groth16-verifier/Cargo.toml
     - name: Test attest contract
       run: cargo test --manifest-path packages/contracts/attest/Cargo.toml --release
     - name: Test groth16-verifier contract

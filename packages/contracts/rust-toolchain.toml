@@ -1,6 +1,6 @@
 # Pins the toolchain for every contract crate under packages/contracts/.
 # Keep the channel in sync with the `contracts` job in .github/workflows/ci.yml.
 [toolchain]
-channel = "1.91.0"
+channel = "1.92.0"
 targets = ["wasm32v1-none"]
 profile = "minimal"
