@@ -1,7 +1,12 @@
 import { buildPoseidon } from "circomlibjs";
 
-export const FIELD_PRIME =
-  21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+// BLS12-381 scalar field prime (Fr). Every part of the shipping stack hashes content
+// into this field — `packages/web/lib/zk.js` and `packages/web/server/utils/chain.ts`
+// both reduce SHA-256 modulo this exact value — so the circuits library must use it
+// too. (It previously exported the BN254 scalar field prime, which cannot reproduce
+// the `contentHash` the deployed BLS12-381 circuit proves over.) See docs/ONCHAIN-STATUS.md.
+export const FR =
+  52435875175126190479447740508185965837690552500527637822603658699938581184513n;
 
 let _poseidonPromise = null;
 
