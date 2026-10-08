@@ -294,3 +294,4 @@ mod test_ttl;
 mod test_bounded_roots;
 mod test_signal_count;
 mod test_malformed;
+mod test_root_first;
