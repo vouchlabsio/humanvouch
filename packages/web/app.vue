@@ -15,13 +15,6 @@ const verifyingHuman = ref(false);
 const humanErr = ref("");
 const turnstileEl = ref<HTMLElement | null>(null);
 let turnstileRendered = false;
-let turnstileTimer: ReturnType<typeof setTimeout> | null = null;
-let turnstileAttempts = 0;
-const TURNSTILE_MAX_ATTEMPTS = 50; // 15 seconds at 300 ms intervals
-onUnmounted(() => {
-  if (turnstileTimer !== null) clearTimeout(turnstileTimer);
-  turnstileTimer = null;
-});
 useHead({
   script: [
     { src: "https://challenges.cloudflare.com/turnstile/v0/api.js", async: true, defer: true },
@@ -42,38 +35,11 @@ async function onHumanToken(token: string) {
   }
 }
 
-import { TurnstilePoller } from "~/lib/turnstilePoller.js";
-
-const turnstilePoller = new TurnstilePoller({
-  onError: (msg) => {
-    humanErr.value = msg;
-  },
-});
-
 function renderTurnstile() {
-  const w = typeof window !== "undefined" ? (window as any) : ({} as any);
+  const w = window as any;
   if (humanVerified.value || turnstileRendered) return;
-  turnstilePoller.poll(
-    () => !!(w.turnstile && turnstileEl.value),
-    () => {
-      turnstileRendered = true;
-      w.turnstile.render(turnstileEl.value, {
-        sitekey: TURNSTILE_SITEKEY,
-        theme: "dark",
-        callback: onHumanToken,
-      });
-    }
-  );
   if (!w.turnstile || !turnstileEl.value) {
-    if (turnstileAttempts >= TURNSTILE_MAX_ATTEMPTS) {
-      humanErr.value = "Human verification could not load. Reload this page to try again.";
-      return;
-    }
-    turnstileAttempts++;
-    turnstileTimer = setTimeout(() => {
-      turnstileTimer = null;
-      renderTurnstile();
-    }, 300);
+    setTimeout(renderTurnstile, 300);
     return;
   }
   turnstileRendered = true;
@@ -84,10 +50,6 @@ function renderTurnstile() {
   });
 }
 
-onUnmounted(() => {
-  turnstilePoller.stop();
-});
-
 // vouch flow
 const memberId = ref(1);
 const content = ref(
@@ -95,7 +57,7 @@ const content = ref(
 );
 const vStatus = ref("");
 const vBusy = ref(false);
-const vResult = ref<{ count: number; hash: string; contentHash: string; share: string } | null>(null);
+const vResult = ref<{ count: number; hash: string; share: string } | null>(null);
 const vErr = ref("");
 const copied = ref(false);
 
@@ -126,26 +88,18 @@ onMounted(async () => {
   if (route.query.v) await openSharedVerification(String(route.query.v));
 });
 
-import { resolveShareView, createShareFailure } from "~/lib/shareView.js";
-
 // A shareable link /?v=<contentHashField> resolves the attestation for anyone.
 async function openSharedVerification(hashField: string) {
-  shareView.value = { loading: true, hashField, failed: false, error: null };
+  shareView.value = { loading: true, hashField };
   try {
     const zk = await import("~/lib/zk.js");
     const st = await import("~/lib/stellar.js");
-    shareView.value = await resolveShareView(
-      hashField,
-      (hf: string) => st.getVouches(cfg, null, zk.toBytes32BE(BigInt(hf))),
-      (hf: string) =>
-        typeof localStorage !== "undefined" ? localStorage.getItem("hv_content_" + hf) : null
-    );
+    const count = await st.getVouches(cfg, null, zk.toBytes32BE(BigInt(hashField)));
+    const stored =
+      typeof localStorage !== "undefined" ? localStorage.getItem("hv_content_" + hashField) : null;
+    shareView.value = { loading: false, hashField, count, content: stored };
   } catch (e: any) {
-    shareView.value = createShareFailure(hashField, e);
-    shareView.value = {
-      loading: false, hashField,
-      error: e?.message || "Could not resolve this attestation. Please try again.",
-    };
+    shareView.value = { loading: false, hashField, error: e.message };
   }
 }
 
@@ -197,7 +151,6 @@ async function doVouch() {
     vStatus.value = "";
     vResult.value = {
       ...res,
-      contentHash: ch.toString(),
       share: `${location.origin}/?v=${ch.toString()}`,
     };
   } catch (e: any) {
@@ -275,21 +228,11 @@ async function runAgentQuery() {
           {{ walletBusy ? (walletStatus || "Connecting…") : wallet ? short(wallet) + " · testnet" : "Create testnet wallet" }}
         </button>
       </header>
-      <p v-if="walletErr" role="alert" class="px-6 pt-3 font-mono text-xs text-oxblood sm:px-10">⚠ {{ walletErr }}</p>
 
       <!-- shared verification (opened from a /?v=… link pasted on X / Medium) -->
       <section v-if="shareView" class="border-b border-ink-600 bg-brass/5 px-6 py-7 sm:px-10">
-        <p class="eyebrow text-brass">Content credential · Stellar verification</p>
+        <p class="eyebrow text-brass">Content credential · resolved on Stellar</p>
         <p v-if="shareView.loading" class="mt-3 font-mono text-sm text-prussian-light">Resolving on-chain…</p>
-        <div v-else-if="shareView.failed || shareView.error" class="mt-3 rounded-sm border border-oxblood/40 bg-ink-800 p-3 text-sm">
-          <p class="font-medium text-oxblood">⚠ Resolution error on Stellar</p>
-          <p class="mt-1 font-mono text-xs text-paper-dim">{{ shareView.error || "On-chain attestation resolution failed." }}</p>
-          <p class="mt-2 font-mono text-[11px] text-paper-faint">contentHash {{ shareView.hashField?.slice(0, 18) }}… · AttestContract {{ cfg.attestContractId?.slice(0, 8) }}…</p>
-        </div>
-        <template v-else-if="shareView.error">
-          <p class="mt-3 text-lg text-oxblood">Verification unavailable</p>
-          <p role="alert" class="mt-2 font-mono text-sm text-oxblood">{{ shareView.error }}</p>
-        </template>
         <template v-else>
           <p class="mt-3 text-lg text-paper">
             <span v-if="shareView.count > 0" class="text-brass-light">✅ Human-Vouched</span>
@@ -320,7 +263,7 @@ async function runAgentQuery() {
         </div>
         <div class="order-1 flex h-[320px] w-[320px] items-center justify-center lg:order-2">
           <ClientOnly>
-            <VouchSeal :size="320" :hash="vResult ? vResult.contentHash : '0x9F4C·A1B2'"
+            <VouchSeal :size="320" :hash="vResult ? '0x' + (vResult.hash.slice(0,8)) : '0x9F4C·A1B2'"
                        :label="vResult ? 'Vouched' : 'Attestation'" />
           </ClientOnly>
         </div>
@@ -340,18 +283,18 @@ async function runAgentQuery() {
               <p class="text-xs text-paper-dim">Pass a real human check before you get an identity.</p>
               <div ref="turnstileEl" class="mt-2 min-h-[66px]" />
               <p v-if="verifyingHuman" class="mt-2 font-mono text-xs text-prussian-light">Verifying with Cloudflare…</p>
-              <p v-if="humanErr" role="alert" class="mt-2 font-mono text-xs text-oxblood">⚠ {{ humanErr }}</p>
+              <p v-if="humanErr" class="mt-2 font-mono text-xs text-oxblood">⚠ {{ humanErr }}</p>
             </div>
             <p v-else class="mt-2 text-xs text-brass-light">✓ Human verified · identity issued <span class="text-paper-faint">(real anti-bot via Turnstile; World ID adds uniqueness)</span></p>
           </div>
 
-          <label for="member-id" class="mt-4 block font-mono text-xs text-paper-faint">YOUR VERIFIED IDENTITY (demo registry)</label>
-          <select id="member-id" v-model="memberId" class="mt-1.5 w-full rounded-sm border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-paper">
+          <label class="mt-4 block font-mono text-xs text-paper-faint">YOUR VERIFIED IDENTITY (demo registry)</label>
+          <select v-model="memberId" class="mt-1.5 w-full rounded-sm border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-paper">
             <option v-for="m in registry?.members || []" :key="m.id" :value="m.id">{{ m.label }}</option>
           </select>
 
-          <label for="vouch-content" class="mt-4 block font-mono text-xs text-paper-faint">CONTENT (a full article)</label>
-          <textarea id="vouch-content" v-model="content" rows="5"
+          <label class="mt-4 block font-mono text-xs text-paper-faint">CONTENT (a full article)</label>
+          <textarea v-model="content" rows="5"
             class="mt-1.5 w-full resize-none rounded-sm border border-ink-600 bg-ink-800 px-3 py-2 text-sm leading-relaxed text-paper" />
 
           <button :disabled="vBusy || !humanVerified"
@@ -361,7 +304,7 @@ async function runAgentQuery() {
           </button>
 
           <p v-if="vStatus" class="mt-3 font-mono text-xs text-prussian-light">{{ vStatus }}</p>
-          <p v-if="vErr" role="alert" class="mt-3 font-mono text-xs text-oxblood">⚠ {{ vErr }}</p>
+          <p v-if="vErr" class="mt-3 font-mono text-xs text-oxblood">⚠ {{ vErr }}</p>
           <div v-if="vResult" class="mt-4 rounded-sm border border-brass/30 bg-brass/5 p-4 text-sm">
             <p class="text-brass-light">✅ Vouched on-chain · <span class="text-paper">{{ vResult.count }}</span> unique human(s) for this content</p>
             <a :href="`https://stellar.expert/explorer/testnet/tx/${vResult.hash}`" target="_blank"
@@ -384,8 +327,8 @@ async function runAgentQuery() {
           <p class="eyebrow text-paper-dim">Verify a post</p>
           <p class="mt-3 text-sm text-paper-dim">Anyone can check how many unique verified humans stand behind a piece of content.</p>
 
-          <label for="verify-content" class="mt-5 block font-mono text-xs text-paper-faint">PASTE CONTENT (blank = use the one on the left)</label>
-          <textarea id="verify-content" v-model="vcontent" rows="3" placeholder="Paste the article / post text…"
+          <label class="mt-5 block font-mono text-xs text-paper-faint">PASTE CONTENT (blank = use the one on the left)</label>
+          <textarea v-model="vcontent" rows="3" placeholder="Paste the article / post text…"
             class="mt-1.5 w-full resize-none rounded-sm border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-paper placeholder:text-paper-faint" />
 
           <button :disabled="verBusy"
@@ -394,7 +337,7 @@ async function runAgentQuery() {
             {{ verBusy ? "Checking…" : "Check vouches on Stellar" }}
           </button>
 
-          <p v-if="verErr" role="alert" class="mt-3 font-mono text-xs text-oxblood">⚠ {{ verErr }}</p>
+          <p v-if="verErr" class="mt-3 font-mono text-xs text-oxblood">⚠ {{ verErr }}</p>
           <div v-if="verCount !== null" class="mt-4 rounded-sm border border-ink-600 p-4">
             <p class="font-display text-3xl text-paper">{{ verCount }}</p>
             <p class="mt-1 text-sm text-paper-dim">unique verified human(s) vouch for this exact content · anonymous · on Stellar</p>
@@ -431,9 +374,12 @@ async function runAgentQuery() {
         </div>
 
         <pre class="mt-5 overflow-x-auto rounded-sm border border-ink-600 bg-ink-800 p-4 font-mono text-xs text-paper-dim"><span class="text-paper-faint"># an agent asks if a human backs this article</span>
-curl <span class="text-prussian-light">/api/v1/attestation?content=…</span></pre>
+<span class="text-paper-faint"># 1) unpaid request → 402 Payment Required (the x402 challenge)</span>
+curl <span class="text-prussian-light">"https://web-seven-eta-40.vercel.app/api/v1/attestation?content=does%20a%20human%20back%20this"</span>
+<span class="text-paper-faint"># 2) retry with the payment receipt → 200 OK + the on-chain answer</span>
+curl -H <span class="text-prussian-light">"X-Payment: stellar-testnet:&lt;receipt&gt;"</span> <span class="text-prussian-light">"https://web-seven-eta-40.vercel.app/api/v1/attestation?content=does%20a%20human%20back%20this"</span></pre>
 
-        <div v-if="agentErr" role="alert" class="mt-3 font-mono text-xs text-oxblood">⚠ {{ agentErr }}</div>
+        <div v-if="agentErr" class="mt-3 font-mono text-xs text-oxblood">⚠ {{ agentErr }}</div>
 
         <div v-if="agent402" class="mt-4 grid gap-3 lg:grid-cols-2">
           <div>
