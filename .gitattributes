@@ -3,3 +3,28 @@
 *.mp4 binary
 *.zkey binary
 *.wasm binary
+# Normalize line endings
+* text=auto
+
+*.js text eol=lf
+*.jsx text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.vue text eol=lf
+*.json text eol=lf
+*.rs text eol=lf
+*.sh text eol=lf
+*.circom text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
