@@ -156,7 +156,8 @@ fn parse_signals(env: &Env, bytes: &Bytes) -> Result<Vec<Fr>, Error> {
 
 fn verify_proof(env: &Env, vk: VerificationKey, proof: Proof, pub_signals: Vec<Fr>) -> Result<bool, Error> {
     if pub_signals.len() + 1 != vk.ic.len() {
-        return Err(Error::MalformedVerifyingKey);
+        // the key itself parsed fine: the fault is the number of public signals
+        return Err(Error::WrongSignalCount);
     }
     let bls = env.crypto().bls12_381();
     let mut vk_x = vk.ic.get(0).unwrap();
@@ -291,3 +292,4 @@ mod test {
 #[cfg(test)]
 mod test_ttl;
 mod test_bounded_roots;
+mod test_signal_count;
