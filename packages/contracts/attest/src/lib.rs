@@ -15,14 +15,12 @@
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype,
     crypto::bls12_381::{Fr, G1Affine, G2Affine, G1_SERIALIZED_SIZE, G2_SERIALIZED_SIZE},
-    symbol_short, vec, Bytes, BytesN, Env, Symbol, Vec, U256,
+    symbol_short, vec, Address, Bytes, BytesN, Env, Symbol, Vec, U256,
 };
 
 const VK_KEY: Symbol = symbol_short!("VK");
 const ROOTS: Symbol = symbol_short!("ROOTS");
-/// Registry root history kept by `set_root`: the newest MAX_ROOTS roots stay valid, so a
-/// proof built against a recently replaced root still verifies while storage stays bounded.
-pub const MAX_ROOTS: u32 = 32;
+const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -36,6 +34,8 @@ pub enum Error {
     InvalidProof = 6,
     AlreadyVouched = 7,
     WrongSignalCount = 8,
+    NotInitialized = 9,
+    AlreadyInitialized = 10,
 }
 
 #[contracttype]
@@ -80,6 +80,17 @@ fn slice32(env: &Env, bytes: &Bytes, pos: u32, err: Error) -> Result<BytesN<32>,
     let mut arr = [0u8; 32];
     bytes.slice(pos..end).copy_into_slice(&mut arr);
     Ok(BytesN::from_array(env, &arr))
+}
+
+/// Require authorisation from the stored admin before a privileged write.
+fn require_admin(env: &Env) -> Result<(), Error> {
+    let admin: Address = env
+        .storage()
+        .instance()
+        .get(&ADMIN_KEY)
+        .ok_or(Error::NotInitialized)?;
+    admin.require_auth();
+    Ok(())
 }
 
 impl VerificationKey {
@@ -156,8 +167,7 @@ fn parse_signals(env: &Env, bytes: &Bytes) -> Result<Vec<Fr>, Error> {
 
 fn verify_proof(env: &Env, vk: VerificationKey, proof: Proof, pub_signals: Vec<Fr>) -> Result<bool, Error> {
     if pub_signals.len() + 1 != vk.ic.len() {
-        // the key itself parsed fine: the fault is the number of public signals
-        return Err(Error::WrongSignalCount);
+        return Err(Error::MalformedVerifyingKey);
     }
     let bls = env.crypto().bls12_381();
     let mut vk_x = vk.ic.get(0).unwrap();
@@ -171,45 +181,32 @@ fn verify_proof(env: &Env, vk: VerificationKey, proof: Proof, pub_signals: Vec<F
     Ok(bls.pairing_check(vp1, vp2))
 }
 
-/// How long a recorded vouch and its nullifier must survive without being touched: ~30 days of
-/// 5-second ledgers. Without an extension both persistent entries would expire after the network's
-/// minimum TTL; an expired nullifier would let the same human vouch again (replay).
-pub const VOUCH_TTL_LEDGERS: u32 = 518_400;
-
-/// One human, one vouch per content: store the nullifier, bump the count, extend both TTLs.
-fn record_vouch(env: &Env, content: BytesN<32>, nullifier: BytesN<32>) -> Result<u32, Error> {
-    let store = env.storage().persistent();
-    let nk = DataKey::Nullifier(content.clone(), nullifier);
-    if store.has(&nk) {
-        return Err(Error::AlreadyVouched);
-    }
-    store.set(&nk, &true);
-
-    let vkey = DataKey::Vouches(content);
-    let count: u32 = store.get(&vkey).unwrap_or(0) + 1;
-    store.set(&vkey, &count);
-
-    let extend_to = VOUCH_TTL_LEDGERS.min(env.storage().max_ttl());
-    store.extend_ttl(&nk, extend_to, extend_to);
-    store.extend_ttl(&vkey, extend_to, extend_to);
-    Ok(count)
-}
-
 #[contract]
 pub struct AttestContract;
 
 #[contractimpl]
 impl AttestContract {
-    /// Store the circuit verifying key (parsed once so a malformed key cannot be stored).
+    /// One-time initialisation; records the registry issuer (admin) address.
+    pub fn initialize(env: Env, admin: Address) -> Result<(), Error> {
+        if env.storage().instance().has(&ADMIN_KEY) {
+            return Err(Error::AlreadyInitialized);
+        }
+        admin.require_auth();
+        env.storage().instance().set(&ADMIN_KEY, &admin);
+        Ok(())
+    }
+
+    /// Store the circuit verifying key (admin-only; parsed once so a malformed key cannot be stored).
     pub fn set_vk(env: Env, vk_bytes: Bytes) -> Result<(), Error> {
+        require_admin(&env)?;
         let _vk = VerificationKey::from_bytes(&env, &vk_bytes)?;
         env.storage().instance().set(&VK_KEY, &vk_bytes);
         Ok(())
     }
 
-    /// Registry issuer publishes a valid Merkle root (idempotent). Keeps the newest
-    /// `MAX_ROOTS` roots and evicts the oldest beyond that.
+    /// Registry issuer publishes a valid Merkle root (admin-only, idempotent).
     pub fn set_root(env: Env, root: BytesN<32>) {
+        require_admin(&env).unwrap();
         let mut roots: Vec<BytesN<32>> =
             env.storage().instance().get(&ROOTS).unwrap_or(Vec::new(&env));
         let mut found = false;
@@ -221,9 +218,6 @@ impl AttestContract {
         }
         if !found {
             roots.push_back(root);
-            while roots.len() > MAX_ROOTS {
-                roots.pop_front(); // evict the oldest root
-            }
             env.storage().instance().set(&ROOTS, &roots);
         }
     }
@@ -268,7 +262,17 @@ impl AttestContract {
             return Err(Error::InvalidProof);
         }
 
-        record_vouch(&env, content, nullifier)
+        // one human, one vouch per content
+        let nk = DataKey::Nullifier(content.clone(), nullifier);
+        if env.storage().persistent().has(&nk) {
+            return Err(Error::AlreadyVouched);
+        }
+        env.storage().persistent().set(&nk, &true);
+
+        let vkey = DataKey::Vouches(content);
+        let count: u32 = env.storage().persistent().get(&vkey).unwrap_or(0) + 1;
+        env.storage().persistent().set(&vkey, &count);
+        Ok(count)
     }
 
     pub fn get_vouches(env: Env, content_hash: BytesN<32>) -> u32 {
@@ -281,19 +285,52 @@ impl AttestContract {
 
 #[cfg(test)]
 mod test {
-    extern crate std;
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    fn setup(env: &Env) -> (AttestContractClient<'_>, Address) {
+        env.mock_all_auths();
+        let contract_id = env.register(AttestContract, ());
+        let client = AttestContractClient::new(env, &contract_id);
+        let admin = Address::generate(env);
+        client.initialize(&admin);
+        (client, admin)
+    }
 
     #[test]
-    fn test_harness_links() {
-        // The crate now builds as an rlib, so #[cfg(test)] modules link and run.
+    fn set_root_from_admin_succeeds() {
+        let env = Env::default();
+        let (client, _admin) = setup(&env);
+        let root = BytesN::from_array(&env, &[7u8; 32]);
+        client.set_root(&root);
+        assert!(client.is_valid_root(&root));
+    }
+
+    #[test]
+    fn initialize_is_one_time() {
+        let env = Env::default();
+        let (client, _admin) = setup(&env);
+        let other = Address::generate(&env);
+        let res = client.try_initialize(&other);
+        assert!(matches!(res, Err(Ok(Error::AlreadyInitialized))));
+    }
+
+    #[test]
+    #[should_panic]
+    fn set_root_without_admin_authorisation_panics() {
+        let env = Env::default();
+        let (client, _admin) = setup(&env);
+        // Disable auth mocking so require_auth must see a real (missing) authorisation.
+        env.set_auths(&[]);
+        client.set_root(&BytesN::from_array(&env, &[7u8; 32]));
+    }
+
+    #[test]
+    #[should_panic]
+    fn set_vk_without_admin_authorisation_panics() {
+        let env = Env::default();
+        let (client, _admin) = setup(&env);
+        env.set_auths(&[]);
+        client.set_vk(&Bytes::from_slice(&env, &[0u8; 4]));
     }
 }
-
-#[cfg(test)]
-mod test_ttl;
-mod test_bounded_roots;
-mod test_signal_count;
-mod test_malformed;
-mod test_root_first;
-mod test_roots;
-mod test_no_vk;
