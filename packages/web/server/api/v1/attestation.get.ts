@@ -26,7 +26,12 @@ export default defineEventHandler(async (event) => {
       return { code: "HASH_OUT_OF_RANGE", error: "hash must be less than the BLS12-381 scalar field modulus" };
     }
   } else {
-    contentField = contentToField(String(q.content ?? ""));
+    const rawContent = String(q.content ?? "");
+    if (Buffer.byteLength(rawContent, "utf8") > 8192) {
+      setResponseStatus(event, 413);
+      return { code: "CONTENT_TOO_LARGE", error: "content exceeds maximum allowed size of 8 KiB" };
+    }
+    contentField = contentToField(rawContent);
   }
 
   const resource = `/api/v1/attestation?hash=${contentField.toString()}`;
