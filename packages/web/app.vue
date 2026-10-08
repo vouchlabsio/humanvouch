@@ -430,8 +430,12 @@ async function runAgentQuery() {
           </button>
         </div>
 
-        <pre class="mt-5 overflow-x-auto rounded-sm border border-ink-600 bg-ink-800 p-4 font-mono text-xs text-paper-dim"><span class="text-paper-faint"># an agent asks if a human backs this article</span>
-curl <span class="text-prussian-light">/api/v1/attestation?content=…</span></pre>
+        <pre class="mt-5 overflow-x-auto rounded-sm border border-ink-600 bg-ink-800 p-4 font-mono text-xs text-paper-dim"><span class="text-paper-faint"># 1. query challenge returns 402 with micropayment terms</span>
+curl -i <span class="text-prussian-light">"https://humanvouch.io/api/v1/attestation?content=hello+world"</span>
+
+<span class="text-paper-faint"># 2. paid retry with payment receipt header returns 200 on-chain attestation</span>
+curl -i <span class="text-prussian-light">"https://humanvouch.io/api/v1/attestation?content=hello+world"</span> \
+  -H <span class="text-brass-light">"X-Payment: stellar-testnet:demo-receipt"</span></pre>
 
         <div v-if="agentErr" role="alert" class="mt-3 font-mono text-xs text-oxblood">⚠ {{ agentErr }}</div>
 
