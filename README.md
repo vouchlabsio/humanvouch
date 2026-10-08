@@ -21,10 +21,12 @@ accounts cannot fake. It's **attribution, not authorship**; **accountability, no
 ## What it does
 
 - **Vouch** — a verified human stakes a private, anonymous vouch on a piece of content. A Groth16
-  zero-knowledge proof is generated **in the browser** (the identity secret never leaves the device)
-  and the attestation is recorded **on Stellar**.
+  zero-knowledge proof is generated **in the browser** (in production the identity secret never
+  leaves the device; the testnet demo ships its sixteen test credentials in
+  `packages/web/lib/demoIdentities.js`, not in the public registry) and the attestation is recorded
+  **on Stellar**.
 - **Verify** — anyone can check how many unique verified humans stand behind a piece of content.
-- **Shareable credential** — vouching returns a `/?v=<contentHashField>` link (the SHA-256 content hash reduced into the BLS12-381 field, recomputable by anyone holding the content) + a paste-able badge you drop on X,
+- **Shareable credential** — vouching returns a `/?v=<hash>` link + a paste-able badge you drop on X,
   Medium, anywhere; opening it resolves the attestation on-chain.
 - **For agents (x402)** — an HTTP endpoint where an **AI agent pays a micropayment over
   [x402](https://github.com/coinbase/x402) (HTTP 402)** and gets a verifiable, on-chain answer to
@@ -81,33 +83,10 @@ docs/          design spec, BLS12-381 migration addendum, on-chain status
 cd packages/web && yarn install && yarn dev      # http://127.0.0.1:58273
 
 # rebuild the ZK circuit + proof (needs the circom 2 compiler on PATH)
-cd packages/zk/circuits && mkdir -p build
+cd packages/zk/circuits
 circom attestation255.circom --r1cs --wasm --prime bls12381 -o build
 # trusted setup + proof: see docs/ONCHAIN-STATUS.md
 ```
-
-## Deploy
-
-The live demo is deployed to Vercel with `packages/web/scripts/deploy.sh`, the only reproducible
-deployment path:
-
-```bash
-cd packages/web && ./scripts/deploy.sh
-```
-
-What the script does:
-
-1. Builds with the Vercel preset (`VERCEL=1 yarn build`), producing `.vercel/output/`.
-2. Copies the **complete** `@stellar/stellar-sdk` package from the root `node_modules` into every
-   serverless function under `.vercel/output/functions/*.func/node_modules/@stellar/stellar-sdk`.
-3. Uploads the prebuilt output to production with `npx --yes vercel deploy --prebuilt --prod --yes`.
-
-**Do not remove step 2.** `stellar-sdk` 16's ESM build ships nested vendored dependencies that Vercel's
-file tracer misses. Without the copy, the server routes (for example the x402 endpoint
-`/api/v1/attestation`) return a 500 on a missing `js-xdr` file.
-
-Requirements: the Vercel CLI must be authenticated (`npx vercel login`, or a `VERCEL_TOKEN` in the
-environment) and the directory linked to the Vercel project (`npx vercel link`).
 
 ## Honest caveats (also stated in the demo)
 

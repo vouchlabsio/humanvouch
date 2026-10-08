@@ -56,8 +56,8 @@ exactly the distinction most hackathon entries in this space will get wrong.
 
 ```
 [Enrollment off-chain]        [Circom circuit]          [Soroban]                 [App: Nuxt + Express]
- human → commitment      →     prove membership     →    AttestContract      ←     author: hash + proof + submit
- issuer → Merkle tree          + content nullifier        (root registry +          reader: paste URL → fetch
+ human → commitment      →     prove membership     →    RegistryContract    ←     author: hash + proof + submit
+ issuer → Merkle tree          + content nullifier        AttestContract            reader: paste URL → fetch
  root  → on-chain (Groth16)                              (verify+replay+record)            → normalize → hash → query
 ```
 
@@ -65,8 +65,8 @@ Four components + a consumption layer.
 
 ### 4.1 Personhood Registry (mock issuer + on-chain root)
 - Off-chain: each human generates `identitySecret`; `commitment = Poseidon(identitySecret)`.
-- Issuer (us, for demo) inserts commitments into a Poseidon Merkle tree; publishes `root` to the Soroban
-  `AttestContract` root registry via `set_root`. Pre-enroll N demo humans before recording the video.
+- Issuer (us, for demo) inserts commitments into a Poseidon Merkle tree; publishes `root` to a Soroban
+  `RegistryContract`. Pre-enroll N demo humans before recording the video.
 - README states production replaces this with World ID / Self protocol.
 
 ### 4.2 Attestation Circuit (Circom) — the core
@@ -92,15 +92,9 @@ Artifacts produced by trusted setup (Groth16): `.wasm`, `.zkey`, `verification_k
 snarkjs (proof gen) and exported to the Soroban verifier (verifying key).
 
 ### 4.3 Soroban contracts (Rust)
-**Root registry (shipped inside `AttestContract`)**
-
-> **As built:** no standalone `RegistryContract` exists. The registry is part of `AttestContract`
-> (`packages/contracts/attest/src/lib.rs`): valid roots are kept in the `ROOTS` vector in instance
-> storage; `set_root(root)` appends a root if it is new and `is_valid_root(root) -> bool` checks
-> membership. In the demo `set_root` is not restricted to an admin and the root history is not bounded.
-
-- Stores the valid Merkle roots (so proofs against an earlier root stay valid).
-- `set_root(root)` — publishes a root (planned as `update_root`, admin/issuer only).
+**`RegistryContract`**
+- Stores current Merkle `root` and a small history of valid roots (so proofs against a recent root stay valid).
+- `update_root(new_root)` — admin (issuer) only.
 - `is_valid_root(root) -> bool`.
 
 **`AttestContract`** (embeds the Groth16 verifier from `soroban-examples/groth16_verifier`)
@@ -118,7 +112,7 @@ snarkjs (proof gen) and exported to the Soroban verifier (verifying key).
 > written elsewhere in this doc for readability).
 
 - `attest(proof, publicSignals)` where `publicSignals = [root, nullifierHash, contentHash]`:
-  1. `is_valid_root(publicSignals[0])` (same contract, see root registry above) — else reject. **(mandatory membership check)**
+  1. `RegistryContract.is_valid_root(publicSignals[0])` — else reject. **(mandatory membership check)**
   2. Verify Groth16 proof against the circuit's verifying key — else reject.
   3. `nullifierHash` (`publicSignals[1]`) not already used for this `contentHash` (`publicSignals[2]`) — else reject (anti-replay).
   4. Record: `contentHash → unique_human_count++`, store `(contentHash, nullifierHash)` used-set, timestamp.
@@ -135,19 +129,17 @@ snarkjs (proof gen) and exported to the Soroban verifier (verifying key).
    client- or server-side — no secret involved) → `contentHash`.
 2. **Proof generation runs client-side in the browser** (snarkjs wasm + `.zkey`): the author's
    `identitySecret` + Merkle path → Groth16 proof. **The secret never leaves the author's device** —
-   this is what keeps the privacy guarantee honest. (A local CLI/Node script is the fallback for the
+   this is what keeps the privacy guarantee honest. (The shipped testnet demo is an exception: its
+   sixteen test secrets are bundled client-side in `packages/web/lib/demoIdentities.js` rather than
+   served from the public registry; production keeps secrets device-local.) (A local CLI/Node script is the fallback for the
    demo if browser proving is flaky; it still runs on the author's machine, not the server.)
 3. The browser sends only `{proof, [merkleRoot, contentHash, nullifierHash]}` to the API; the API relays
    the `attest` tx to Soroban via `@stellar/stellar-sdk`. The API never sees `identitySecret`.
-4. Returns a verification link `/?v=<contentHashField>` + copy-paste badge snippet. The `v` parameter
-   is the content field element itself (decimal): `SHA-256(canonical content)` reduced modulo the
-   BLS12-381 scalar field order, as computed by `contentHashField` in `packages/web/lib/zk.js` (and
-   `contentToField` in `packages/web/server/utils/chain.ts`). It is **not** an opaque server-side id:
-   anyone holding the content can recompute it, and no server state is needed to resolve it. Canonical content (not the secret)
+4. Returns a verification link `…/v/{id}` + copy-paste badge snippet. Canonical content (not the secret)
    stored in SQLite (demo) / IPFS (prod) so the verifier can display/compare it.
 
 **Reader flow**
-1. Reader opens `/?v=<contentHashField>` OR pastes a **platform post URL** into the verifier.
+1. Reader opens `…/v/{id}` OR pastes a **platform post URL** into the verifier.
 2. Verifier renders canonical content + "✅ Vouched by N unique verified humans · anonymous · on Stellar"
    + live on-chain check button.
 
@@ -160,17 +152,10 @@ re-encoding).
 
 Badge snippet (plain text, pasteable in any tweet / article footer / video description):
 ```
-🧑 Human-Vouched ✓ · humanvouch.xyz/?v=<contentHashField>
+🧑 Human-Vouched ✓ · humanvouch.xyz/v/a1b2c3
 ```
 
 ### 5.1 Platform adapters (verify the *actually published* content)
-
-> **Status: NOT IMPLEMENTED.** No platform adapter exists: there is no adapter file under `packages/web/`,
-> and neither `@mozilla/readability` nor `jsdom` is a dependency in `packages/web/package.json`. The shipped
-> verifier accepts **pasted text only** (it hashes what the reader pastes). Verifying a Medium or X post
-> URL, as described below, is planned work. Because the Medium adapter was a MUST (§8), the submission
-> does not meet that item; the X adapter was a SHOULD.
-
 Adapter pipeline — only step 1 differs per platform; steps 2–4 are shared:
 ```
 post URL → [1 fetch published content] → [2 canonical normalize] → [3 hash] → [4 query AttestContract]
@@ -181,13 +166,6 @@ post URL → [1 fetch published content] → [2 canonical normalize] → [3 hash
   is blocked, ship Medium and mark X "in progress" — does not sink the deliverable.
 
 ### 5.2 Canonical normalization (the real engineering risk — not the blockchain)
-
-> **Status: NOT IMPLEMENTED.** No normalization module exists. Both hashing entry points operate on the
-> **raw input text**: `contentHashField` in `packages/web/lib/zk.js` (browser) and `contentToField` in
-> `packages/web/server/utils/chain.ts` (x402 endpoint) take SHA-256 of the exact bytes and reduce them into
-> the BLS12-381 field. Any whitespace, Unicode or formatting difference changes the hash. Those two
-> functions are where the module described below would be applied.
-
 Author-side hash and verifier-side hash MUST agree despite platform reformatting. Shared deterministic
 normalization module:
 - HTML/markdown → plain text · collapse/normalize whitespace · Unicode NFC · strip platform chrome.
@@ -201,14 +179,14 @@ normalization module:
 
 | Layer | Technology | Source |
 |---|---|---|
-| Monorepo / tooling | Turborepo + Yarn 4 workspaces + Vitest. **Not used:** dotenvx | Template |
-| Frontend (verifier + author UI) | **Shipped:** Nuxt 3 + Tailwind in `packages/web`. **Not used:** radix-vue, Pinia, lucide, marked | Template (`packages/dashboard`) |
-| Backend API | **Shipped:** Nuxt/Nitro server routes in `packages/web/server/api/` (`fund.get.ts`, `verify-human.post.ts`, `v1/attestation.get.ts`). **Not built:** Express 5 + pino + helmet + cors + rate-limit (`packages/api`) | Replaced by Nitro routes per the BLS12-381 addendum |
-| Index / content store | **Not built:** no Prisma schema, no SQLite, no IPFS. Shared content is kept only in the author's browser `localStorage` | Planned: Prisma + SQLite (demo) → IPFS (prod) |
+| Monorepo / tooling | Turborepo + Yarn 4 workspaces + Vitest + dotenvx | Template |
+| Frontend (verifier + author UI) | Nuxt 3 + Tailwind + radix-vue + Pinia + lucide + marked | Template (`packages/dashboard`) |
+| Backend API | Express 5 (ESM) + pino + helmet + cors + rate-limit | Template (`packages/api`) |
+| Index / content store | Prisma 7 + SQLite (demo) → IPFS (prod) | Template (Prisma); SQLite = YAGNI adjustment |
 | ZK circuit | Circom 2 + circomlib (Poseidon, Merkle) + snarkjs (setup + proof) | NEW (`packages/circuits`) |
 | Contracts | Soroban (Rust) + soroban-cli, based on `soroban-examples/groth16_verifier` | NEW (`packages/contracts`) |
-| Stellar tx / query | @stellar/stellar-sdk (browser `packages/web/lib/stellar.js` + server `packages/web/server/utils/chain.ts`) | NEW |
-| Consumption adapters | **Not built:** undici + @mozilla/readability + jsdom (Medium); oembed/syndication (X) | NEW (planned) |
+| Stellar tx / query | @stellar/stellar-sdk (in API) | NEW |
+| Consumption adapters | undici + @mozilla/readability + jsdom (Medium); oembed/syndication (X) | NEW (in API) |
 | Mock issuer + enroll | Node script: commitments + Poseidon Merkle tree + publish root | NEW (`scripts/`) |
 
 `ScarlettPlattform/scarlett-hub` is used **read-only as a template** (structure + conventions copied to
@@ -237,16 +215,16 @@ State this disclaimer in the demo video and README.
 
 **MUST**
 - Circom circuit (Merkle inclusion + content nullifier) + Groth16 trusted setup + artifacts.
-- `AttestContract` with built-in root registry (verify + valid-root + replay guard + record + view) on testnet. ✅ (no separate `RegistryContract`)
+- `RegistryContract` + `AttestContract` (verify + valid-root + replay guard + record + view) on testnet.
 - Enrollment script (mock issuer) + proof-gen path (API/snarkjs).
-- API: submit attestation, query vouches ✅ (Nitro routes / browser). Medium adapter ❌ not built (§5.1). Canonical normalization ❌ not built (§5.2).
+- Express API: submit attestation, query vouches, Medium adapter, canonical normalization.
 - Nuxt verifier page (canonical content + vouch count + live check) + author submit UI.
 - Portable badge/link.
 - README with explicit honest threat model + "production uses World ID".
 - 2–3 min demo video.
 
 **SHOULD**
-- X adapter (if fetch path cooperates). ❌ not built (§5.1).
+- X adapter (if fetch path cooperates).
 - Content-bound attestation NFT (stretch; cheap on-chain, build only after MUST is done).
 
 **CUT**
@@ -258,7 +236,7 @@ State this disclaimer in the demo video and README.
 - **Circuit:** member → proof verifies; non-member → fails; wrong nullifier → fails.
 - **Contracts:** accept valid; reject replay (same nullifier+content); reject invalid/stale root; count increments.
 - **Normalization:** author text and platform-fetched text of the same logical content hash equal;
-  edited content hashes differ. ❌ **Not written** (the normalization module does not exist, see §5.2).
+  edited content hashes differ.
 - **E2E:** enroll → attest → `get_vouches`=1; same human+content → reject; different human+same content → 2;
   reader pastes Medium URL → verifier shows correct count.
 

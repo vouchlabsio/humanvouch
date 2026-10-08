@@ -2,6 +2,7 @@
 // proof with snarkjs, and encode it to the contract's byte format.
 import * as snarkjs from "snarkjs";
 import { proofToHex, publicSignalsToHex } from "./snarkHex.js";
+import { demoIdentitySecret } from "./demoIdentities.js";
 
 const FR = 52435875175126190479447740508185965837690552500527637822603658699938581184513n;
 
@@ -28,7 +29,9 @@ export function toBytes32BE(value) {
 // Generate the membership proof for `member` vouching for content with hash `contentHashBig`.
 export async function generateVouchProof(member, contentHashBig) {
   const input = {
-    identitySecret: member.identitySecret,
+    // Registry members no longer carry a plaintext secret; the demo supplies it
+    // out of band so the public /zk/registry.json exposes only commitments/paths.
+    identitySecret: member.identitySecret ?? demoIdentitySecret(member.id),
     pathElements: member.pathElements,
     pathIndices: member.pathIndices,
     contentHash: contentHashBig.toString(),
