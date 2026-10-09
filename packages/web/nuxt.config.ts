@@ -56,6 +56,9 @@ export default defineNuxtConfig({
       rpcUrl: "https://soroban-testnet.stellar.org",
       networkPassphrase: "Test SDF Network ; September 2015",
       readSourcePublicKey: "GDTLFJ4P2YYJRVO4ED4YQSC5MXKVXYNZPVZXIF3IB5WRMWRFKCJW7BPE",
+      // Public Turnstile sitekey (the matching secret stays server-side in
+      // CF_TURNSTILE_SECRET). Defaults to Cloudflare's public test key.
+      turnstileSitekey: process.env.CF_TURNSTILE_SITEKEY || "1x00000000000000000000AA",
     },
   },
   app: {
