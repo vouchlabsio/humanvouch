@@ -382,6 +382,11 @@ curl -i <span class="text-prussian-light">"https://humanvouch.io/api/v1/attestat
 <span class="text-paper-faint"># 2. paid retry with payment receipt header returns 200 on-chain attestation</span>
 curl -i <span class="text-prussian-light">"https://humanvouch.io/api/v1/attestation?content=hello+world"</span> \
   -H <span class="text-brass-light">"X-Payment: stellar-testnet:demo-receipt"</span></pre>
+        <pre class="mt-5 overflow-x-auto rounded-sm border border-ink-600 bg-ink-800 p-4 font-mono text-xs text-paper-dim"><span class="text-paper-faint"># an agent asks if a human backs this article</span>
+<span class="text-paper-faint"># 1) unpaid request → 402 Payment Required (the x402 challenge)</span>
+curl <span class="text-prussian-light">"https://web-seven-eta-40.vercel.app/api/v1/attestation?content=does%20a%20human%20back%20this"</span>
+<span class="text-paper-faint"># 2) retry with the payment receipt → 200 OK + the on-chain answer</span>
+curl -H <span class="text-prussian-light">"X-Payment: stellar-testnet:&lt;receipt&gt;"</span> <span class="text-prussian-light">"https://web-seven-eta-40.vercel.app/api/v1/attestation?content=does%20a%20human%20back%20this"</span></pre>
 
         <div v-if="agentErr" class="mt-3 font-mono text-xs text-oxblood">⚠ {{ agentErr }}</div>
 
