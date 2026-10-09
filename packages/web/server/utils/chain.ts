@@ -9,6 +9,9 @@ import { createHash } from "node:crypto";
 import { normalizeContent } from "../../lib/normalize.js";
 
 const FR = BigInt(
+// BLS12-381 scalar field prime — exported so route handlers can bound-check
+// user-supplied field elements before any BigInt conversion.
+export const FR = BigInt(
   "52435875175126190479447740508185965837690552500527637822603658699938581184513",
 );
 

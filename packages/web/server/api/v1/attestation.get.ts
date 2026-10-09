@@ -27,6 +27,22 @@ export default defineEventHandler(async (event) => {
   if (Array.isArray(q.content)) {
     setResponseStatus(event, 400);
     return { error: "invalid content: expected a single value, not a repeated parameter" };
+  let contentField: bigint;
+  if (typeof q.hash === "string" && q.hash.length) {
+    // Must be a canonical, non-negative BLS12-381 scalar. Letting BigInt() throw
+    // on bad input surfaces as a 500, and "-1" would encode as a malformed value.
+    if (!/^[0-9]+$/.test(q.hash)) {
+      setResponseStatus(event, 400);
+      return { error: "invalid hash: expected a non-negative decimal field element" };
+    }
+    const hash = BigInt(q.hash);
+    if (hash >= FR) {
+      setResponseStatus(event, 400);
+      return { error: "invalid hash: value must be below the BLS12-381 scalar field prime" };
+    }
+    contentField = hash;
+  } else {
+    contentField = contentToField(String(q.content ?? ""));
   }
   const contentField =
     typeof q.hash === "string" && q.hash.length
