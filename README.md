@@ -21,8 +21,10 @@ accounts cannot fake. It's **attribution, not authorship**; **accountability, no
 ## What it does
 
 - **Vouch** — a verified human stakes a private, anonymous vouch on a piece of content. A Groth16
-  zero-knowledge proof is generated **in the browser** (the identity secret never leaves the device)
-  and the attestation is recorded **on Stellar**.
+  zero-knowledge proof is generated **in the browser** (in production the identity secret never
+  leaves the device; the testnet demo ships its sixteen test credentials in
+  `packages/web/lib/demoIdentities.js`, not in the public registry) and the attestation is recorded
+  **on Stellar**.
 - **Verify** — anyone can check how many unique verified humans stand behind a piece of content.
 - **Shareable credential** — vouching returns a `/?v=<hash>` link + a paste-able badge you drop on X,
   Medium, anywhere; opening it resolves the attestation on-chain.
