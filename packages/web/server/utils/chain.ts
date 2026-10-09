@@ -112,8 +112,8 @@ async function getReadSourceAccount(server: any, cfg: ChainCfg): Promise<any> {
 
 // Read-only on-chain query: how many unique humans vouch for this content field element.
 export async function getVouchesOnChain(cfg: ChainCfg, contentField: bigint): Promise<number> {
-  const StellarSdk: any = await import("@stellar/stellar-sdk");
-  const ns: any = StellarSdk.rpc || StellarSdk.SorobanRpc;
+  const StellarSdk = await import("@stellar/stellar-sdk");
+  const ns = StellarSdk.rpc || StellarSdk.SorobanRpc;
   const server = new ns.Server(cfg.rpcUrl, { allowHttp: cfg.rpcUrl.startsWith("http://") });
   const account = await server.getAccount(cfg.readSourcePublicKey);
   const account = await getReadSourceAccount(server, cfg);
