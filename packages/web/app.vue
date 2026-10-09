@@ -285,7 +285,7 @@ async function runAgentQuery() {
               <p class="text-xs text-paper-dim">Pass a real human check before you get an identity.</p>
               <div ref="turnstileEl" class="mt-2 min-h-[66px]" />
               <p v-if="verifyingHuman" class="mt-2 font-mono text-xs text-prussian-light">Verifying with Cloudflare…</p>
-              <p v-if="humanErr" role="alert" class="mt-2 font-mono text-xs text-oxblood">⚠ {{ humanErr }}</p>
+              <p v-if="humanErr" class="mt-2 font-mono text-xs text-oxblood">⚠ {{ humanErr }}</p>
             </div>
             <p v-else class="mt-2 text-xs text-brass-light">✓ Human verified · identity issued <span class="text-paper-faint">(real anti-bot via Turnstile; World ID adds uniqueness)</span></p>
           </div>
@@ -306,7 +306,7 @@ async function runAgentQuery() {
           </button>
 
           <p v-if="vStatus" class="mt-3 font-mono text-xs text-prussian-light">{{ vStatus }}</p>
-          <p v-if="vErr" role="alert" class="mt-3 font-mono text-xs text-oxblood">⚠ {{ vErr }}</p>
+          <p v-if="vErr" class="mt-3 font-mono text-xs text-oxblood">⚠ {{ vErr }}</p>
           <div v-if="vResult" class="mt-4 rounded-sm border border-brass/30 bg-brass/5 p-4 text-sm">
             <p class="text-brass-light">✅ Vouched on-chain · <span class="text-paper">{{ vResult.count }}</span> unique human(s) for this content</p>
             <a :href="`https://stellar.expert/explorer/testnet/tx/${vResult.hash}`" target="_blank"
@@ -339,7 +339,7 @@ async function runAgentQuery() {
             {{ verBusy ? "Checking…" : "Check vouches on Stellar" }}
           </button>
 
-          <p v-if="verErr" role="alert" class="mt-3 font-mono text-xs text-oxblood">⚠ {{ verErr }}</p>
+          <p v-if="verErr" class="mt-3 font-mono text-xs text-oxblood">⚠ {{ verErr }}</p>
           <div v-if="verCount !== null" class="mt-4 rounded-sm border border-ink-600 p-4">
             <p class="font-display text-3xl text-paper">{{ verCount }}</p>
             <p class="mt-1 text-sm text-paper-dim">unique verified human(s) vouch for this exact content · anonymous · on Stellar</p>
