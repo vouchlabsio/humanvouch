@@ -7,23 +7,16 @@
     "build": "nuxt build",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare",
     "test": "vitest run",
-    "typecheck": "nuxt typecheck"
+    "postinstall": "nuxt prepare"
   },
   "dependencies": {
+    "@creit.tech/stellar-wallets-kit": "^1.7.3",
     "@stellar/stellar-sdk": "^16.0.1",
     "nuxt": "^3.16.0",
     "snarkjs": "^0.7.5"
   },
   "devDependencies": {
-    "@nuxtjs/tailwindcss": "^6.13.0",
-    "@vue/compiler-sfc": "3.5.39",
-    "esbuild": "0.28.1",
-    "vitest": "^4.0.18",
-    "vue": "3.5.39",
-    "@vue/server-renderer": "3.5.39",
-    "typescript": "^5.6.3",
-    "vue-tsc": "^2.1.10"
+    "@nuxtjs/tailwindcss": "^6.13.0"
   }
 }
