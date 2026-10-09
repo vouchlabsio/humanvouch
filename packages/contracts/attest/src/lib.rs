@@ -347,6 +347,7 @@ mod test {
     /// enough to exercise the storage/TTL path under test.
     /// enough to exercise the vouch-count accounting under test.
     /// enough to exercise the nullifier-replay guard under test.
+    /// enough to exercise the storage/accounting path under test.
     fn vk_and_proof(env: &Env) -> (Bytes, Bytes) {
         let bls = env.crypto().bls12_381();
         let msg = Bytes::from_slice(env, b"humanvouch-attest-test");
@@ -388,6 +389,7 @@ mod test {
 
     #[test]
     fn attest_extends_persistent_ttl() {
+    fn attest_happy_path_records_one_vouch() {
         let env = Env::default();
         let contract_id = env.register(AttestContract, ());
         let client = AttestContractClient::new(&env, &contract_id);
@@ -543,5 +545,16 @@ mod test {
 
         assert_eq!(client.get_vouches(&BytesN::from_array(&env, &content_a)), 1);
         assert_eq!(client.get_vouches(&BytesN::from_array(&env, &content_b)), 1);
+    }
+
+        let root = [7u8; 32];
+        let nullifier = [1u8; 32];
+        let content = [2u8; 32];
+        client.set_root(&BytesN::from_array(&env, &root));
+        assert!(client.is_valid_root(&BytesN::from_array(&env, &root)));
+
+        let pub_signals = signals(&env, &root, &nullifier, &content);
+        assert_eq!(client.attest(&proof, &pub_signals), 1);
+        assert_eq!(client.get_vouches(&BytesN::from_array(&env, &content)), 1);
     }
 }
