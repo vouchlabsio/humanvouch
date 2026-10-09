@@ -28,6 +28,10 @@ export default defineEventHandler(async (event) => {
     setResponseStatus(event, 400);
     return { error: "invalid content: expected a single value, not a repeated parameter" };
   }
+  const contentField =
+    typeof q.hash === "string" && q.hash.length
+      ? BigInt(q.hash)
+      : await contentToField(String(q.content ?? ""));
 
   const contentField =
     typeof q.hash === "string" && q.hash.length
