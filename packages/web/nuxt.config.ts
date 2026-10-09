@@ -11,12 +11,36 @@ export default defineNuxtConfig({
     esbuild: { options: { target: "es2022" } },
   },
   devServer: { port: 58273, host: "127.0.0.1" },
+  // Security headers on every response; Nitro applies routeRules `headers`
+  // to both server-rendered and prerendered routes.
+  routeRules: {
+    "/**": {
+      headers: {
+        "Content-Security-Policy": [
+          "default-src 'self'",
+          // the Cloudflare Turnstile script + its widget iframe
+          "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
+          "frame-src https://challenges.cloudflare.com",
+          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+          "font-src 'self' https://fonts.gstatic.com",
+          "img-src 'self' data:",
+          "connect-src 'self' https://challenges.cloudflare.com https://soroban-testnet.stellar.org https://friendbot.stellar.org",
+          "object-src 'none'",
+          "base-uri 'self'",
+          "form-action 'self'",
+        ].join("; "),
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+      },
+    },
+  },
   runtimeConfig: {
     public: {
       attestContractId: "CDPDQJB7HX5XVOUHEDQKV6T7KJXNGVTVH3VDCXMFEE7GPIIINOVO5YZT",
       rpcUrl: "https://soroban-testnet.stellar.org",
       networkPassphrase: "Test SDF Network ; September 2015",
-      readSourcePublicKey: "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7",
+      readSourcePublicKey: "GDTLFJ4P2YYJRVO4ED4YQSC5MXKVXYNZPVZXIF3IB5WRMWRFKCJW7BPE",
     },
   },
   app: {
