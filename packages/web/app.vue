@@ -287,6 +287,7 @@ async function runAgentQuery() {
         <div class="order-1 flex h-[320px] w-[320px] items-center justify-center lg:order-2">
           <ClientOnly>
             <VouchSeal :size="320" :hash="vResult ? '0x' + (vResult.hash.slice(0,8)) : '0x9F4C·A1B2'"
+            <VouchSeal :size="320" :hash="vResult ? '0x' + vResult.contentHash.slice(0,8) : '0x9F4C·A1B2'"
                        :label="vResult ? 'Vouched' : 'Attestation'" />
           </ClientOnly>
         </div>
