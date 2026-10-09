@@ -8,8 +8,9 @@ const walletErr = ref<string>("");
 const walletBusy = ref(false);
 const walletStatus = ref("");
 
-// proof-of-personhood (anti-bot) gate — real Cloudflare Turnstile widget
-const TURNSTILE_SITEKEY = "1x00000000000000000000AA"; // public TEST key (always passes)
+// proof-of-personhood (anti-bot) gate — real Cloudflare Turnstile widget.
+// Sitekey from runtime config (public); the matching secret stays server-side.
+const TURNSTILE_SITEKEY = cfg.turnstileSitekey;
 const humanVerified = ref(false);
 const verifyingHuman = ref(false);
 const humanErr = ref("");
