@@ -2,7 +2,7 @@
 
 **Proof that a real, unique human stands behind a piece of content — anonymous, sybil-resistant, and verified on Stellar with zero-knowledge.**
 
-🔗 **Live demo:** https://web-seven-eta-40.vercel.app · 🎬 **Narrated walkthrough:** [`demo/humanvouch-demo-narrated.mp4`](demo/humanvouch-demo-narrated.mp4)
+🔗 **Live demo:** https://web-seven-eta-40.vercel.app · 🎬 **Narrated walkthrough:** watch it in the [live demo](https://web-seven-eta-40.vercel.app) — the video is no longer tracked in git (large media is Git-LFS-tracked per [`.gitattributes`](.gitattributes)).
 
 Built for **[Stellar Hacks: Real-World ZK](https://dorahacks.io/hackathon/stellar-hacks-zk)**.
 
