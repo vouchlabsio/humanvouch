@@ -1,16 +1,25 @@
 // Off-chain: build a REAL Poseidon-bls12381 Merkle registry + membership witness,
 // using the compiled hasher wasms as the hashing oracle (guarantees the off-chain
 // hashes match the circuit exactly). No mocked values anywhere.
-const fs = require("fs");
-const crypto = require("crypto");
+//
+// This workspace member is ESM (the root package.json sets "type": "module"), so the
+// module system is `import` — `require` is not defined here. The generated
+// witness_calculator is a CommonJS build, so it is pulled in with a dynamic import().
+import fs from "node:fs";
+import { createHash } from "node:crypto";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import path from "node:path";
 
-const CIRC = __dirname;
+const CIRC = path.dirname(fileURLToPath(import.meta.url));
 const Fr =
   52435875175126190479447740508185965837690552500527637822603658699938581184513n;
 const DEPTH = 10;
 
 async function loadHasher(name) {
-  const builder = require(`${CIRC}/build/${name}_js/witness_calculator.js`);
+  const calculatorPath = `${CIRC}/build/${name}_js/witness_calculator.js`;
+  // Dynamic import so the CommonJS builder is loaded from an ESM module.
+  const mod = await import(pathToFileURL(calculatorPath).href);
+  const builder = mod.default ?? mod;
   const wasm = fs.readFileSync(`${CIRC}/build/${name}_js/${name}.wasm`);
   const wc = await builder(wasm);
   return async (inputs) =>
@@ -18,7 +27,7 @@ async function loadHasher(name) {
 }
 
 function sha256ToField(str) {
-  const h = crypto.createHash("sha256").update(str).digest("hex");
+  const h = createHash("sha256").update(str).digest("hex");
   return BigInt("0x" + h) % Fr;
 }
 

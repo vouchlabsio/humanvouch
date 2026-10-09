@@ -1,0 +1,7 @@
+{
+  "name": "@humanvouch/zk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Off-chain registry + membership witness builder (Poseidon-bls12381) for the attestation255 circuit."
+}
