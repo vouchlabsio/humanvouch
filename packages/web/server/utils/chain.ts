@@ -5,6 +5,13 @@ import { sha256ToField } from "../lib/field.js";
 
 export async function contentToField(text: string): Promise<bigint> {
   return sha256ToField(text);
+const FR = BigInt(
+  "52435875175126190479447740508185965837690552500527637822603658699938581184513",
+);
+
+export function contentToField(text: string): bigint {
+  const hex = createHash("sha256").update(text, "utf8").digest("hex");
+  return BigInt("0x" + hex) % FR;
 }
 
 export function fieldToBytes32(value: bigint): Buffer {
@@ -17,6 +24,7 @@ export interface ChainCfg {
   rpcUrl: string;
   networkPassphrase: string;
   readSourcePublicKey: string;
+  paymentAddress: string;
 }
 
 // Read-only on-chain query: how many unique humans vouch for this content field element.

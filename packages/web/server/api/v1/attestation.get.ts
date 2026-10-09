@@ -53,7 +53,7 @@ export default defineEventHandler(async (event) => {
           network: "stellar-testnet",
           maxAmountRequired: "100000", // 0.01 XLM, in stroops
           asset: "native",
-          payTo: cfg.readSourcePublicKey,
+          payTo: cfg.paymentAddress,
           resource,
           mimeType: "application/json",
           description:
