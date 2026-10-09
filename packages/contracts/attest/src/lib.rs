@@ -345,6 +345,7 @@ mod test {
     /// `e(-P, Q)`, whose product is the identity. Every public signal is fed
     /// against an identity `ic` entry, so the signal values stay unconstrained —
     /// enough to exercise the storage/TTL path under test.
+    /// enough to exercise the vouch-count accounting under test.
     fn vk_and_proof(env: &Env) -> (Bytes, Bytes) {
         let bls = env.crypto().bls12_381();
         let msg = Bytes::from_slice(env, b"humanvouch-attest-test");
@@ -464,5 +465,36 @@ mod test {
         let (client, _admin) = setup(&env);
         env.set_auths(&[]);
         client.set_vk(&Bytes::from_slice(&env, &[0u8; 4]));
+
+    #[test]
+    fn get_vouches_defaults_to_zero_for_unknown_content() {
+        let env = Env::default();
+        let contract_id = env.register(AttestContract, ());
+        let client = AttestContractClient::new(&env, &contract_id);
+
+        let unknown = BytesN::from_array(&env, &[9u8; 32]);
+        assert_eq!(client.get_vouches(&unknown), 0);
+    }
+
+    #[test]
+    fn distinct_nullifiers_increment_the_vouch_count() {
+        let env = Env::default();
+        let contract_id = env.register(AttestContract, ());
+        let client = AttestContractClient::new(&env, &contract_id);
+
+        let (vk, proof) = vk_and_proof(&env);
+        client.set_vk(&vk);
+        let root = [7u8; 32];
+        client.set_root(&BytesN::from_array(&env, &root));
+
+        let content = [2u8; 32];
+        let first = signals(&env, &root, &[1u8; 32], &content);
+        let second = signals(&env, &root, &[2u8; 32], &content);
+
+        assert_eq!(client.attest(&proof, &first), 1);
+        assert_eq!(client.get_vouches(&BytesN::from_array(&env, &content)), 1);
+
+        assert_eq!(client.attest(&proof, &second), 2);
+        assert_eq!(client.get_vouches(&BytesN::from_array(&env, &content)), 2);
     }
 }
