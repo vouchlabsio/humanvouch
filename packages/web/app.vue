@@ -99,6 +99,23 @@ async function openSharedVerification(hashField: string) {
     const stored =
       typeof localStorage !== "undefined" ? localStorage.getItem("hv_content_" + hashField) : null;
     shareView.value = { loading: false, hashField, count, content: stored };
+    const hash = BigInt(hashField);
+    const count = await st.getVouches(cfg, null, zk.toBytes32BE(hash));
+    // localStorage is only a same-browser fast path; every other visitor resolves
+    // the content from the shared registry so the credential renders for them too.
+    let content: string | null =
+      typeof localStorage !== "undefined" ? localStorage.getItem("hv_content_" + hashField) : null;
+    if (!content) {
+      const reg = registry.value ?? (await zk.loadRegistry());
+      registry.value = reg;
+      if (
+        reg?.demoContent &&
+        (await zk.contentHashField(reg.demoContent)).toString() === hash.toString()
+      ) {
+        content = reg.demoContent;
+      }
+    }
+    shareView.value = { loading: false, hashField, count, content };
   } catch (e: any) {
     shareView.value = { loading: false, hashField, error: e.message };
   }
