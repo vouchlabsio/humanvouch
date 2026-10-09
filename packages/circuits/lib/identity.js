@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { getPoseidon, FIELD_PRIME } from "./poseidon.js";
+import { getPoseidon, FR } from "./poseidon.js";
 
 export async function commitment(identitySecret) {
   const p = await getPoseidon();
@@ -14,5 +14,5 @@ export async function nullifierHash(identitySecret, contentHash) {
 export function hashToField(bytes) {
   const digest = createHash("sha256").update(bytes).digest(); // 32 bytes
   const asBig = BigInt("0x" + digest.toString("hex"));
-  return asBig % FIELD_PRIME;
+  return asBig % FR;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getPoseidon, FIELD_PRIME } from "../lib/poseidon.js";
+import { getPoseidon, FR } from "../lib/poseidon.js";
 import { commitment, nullifierHash, hashToField } from "../lib/identity.js";
 
 describe("poseidon", () => {
@@ -9,13 +9,22 @@ describe("poseidon", () => {
     const b = p.hash([1n]);
     expect(a).toBe(b);
     expect(a).toBeTypeOf("bigint");
-    expect(a).toBeLessThan(FIELD_PRIME);
+    expect(a).toBeLessThan(FR);
     expect(a).not.toBe(1n);
   });
 
   it("is sensitive to input order for two inputs", async () => {
     const p = await getPoseidon();
     expect(p.hash([1n, 2n])).not.toBe(p.hash([2n, 1n]));
+  });
+});
+
+describe("field prime", () => {
+  it("pins the BLS12-381 scalar field prime the shipping stack uses", () => {
+    // Same value as packages/web/lib/zk.js and packages/web/server/utils/chain.ts.
+    expect(FR).toBe(
+      52435875175126190479447740508185965837690552500527637822603658699938581184513n,
+    );
   });
 });
 
@@ -37,11 +46,15 @@ describe("identity", () => {
     expect(await nullifierHash(42n, 100n)).toBe(n1); // deterministic
   });
 
-  it("hashToField is deterministic and inside the field", async () => {
+  it("hashToField is deterministic, inside the field and pinned", async () => {
     const enc = new TextEncoder();
     const h = hashToField(enc.encode("hello world"));
     expect(h).toBe(hashToField(enc.encode("hello world")));
-    expect(h).toBeLessThan(FIELD_PRIME);
+    expect(h).toBeLessThan(FR);
     expect(h).not.toBe(hashToField(enc.encode("hello worlD")));
+    // Pinned BLS12-381 reduction of SHA-256("hello world").
+    expect(h).toBe(
+      31378323207976367740283337752706764094556065503738062862864269487438524567016n,
+    );
   });
 });
