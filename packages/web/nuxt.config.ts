@@ -36,6 +36,9 @@ export default defineNuxtConfig({
     },
   },
   runtimeConfig: {
+    // Per-IP budget for the abuse-prone public routes (see server/middleware/rate-limit.ts).
+    rateLimitMax: Number(process.env.RATE_LIMIT_MAX) || 10,
+    rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60_000,
     public: {
       attestContractId: "CDPDQJB7HX5XVOUHEDQKV6T7KJXNGVTVH3VDCXMFEE7GPIIINOVO5YZT",
       rpcUrl: "https://soroban-testnet.stellar.org",
