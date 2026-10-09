@@ -13,6 +13,11 @@ import path from "node:path";
 const CIRC = path.dirname(fileURLToPath(import.meta.url));
 const Fr =
   52435875175126190479447740508185965837690552500527637822603658699938581184513n;
+import { sha256ToField } from "../../web/lib/field.js";
+
+const fs = require("fs");
+
+const CIRC = __dirname;
 const DEPTH = 10;
 
 async function loadHasher(name) {

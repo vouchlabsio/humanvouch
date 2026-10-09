@@ -2,8 +2,7 @@
 // proof with snarkjs, and encode it to the contract's byte format.
 import * as snarkjs from "snarkjs";
 import { proofToHex, publicSignalsToHex } from "./snarkHex.js";
-
-const FR = 52435875175126190479447740508185965837690552500527637822603658699938581184513n;
+import { sha256ToField } from "./field.js";
 
 export async function loadRegistry() {
   const res = await fetch("/zk/registry.json");
@@ -13,9 +12,7 @@ export async function loadRegistry() {
 
 // SHA-256(content) reduced into the BLS12-381 scalar field — matches the circuit's contentHash.
 export async function contentHashField(text) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return BigInt("0x" + hex) % FR;
+  return sha256ToField(text);
 }
 
 export function toBytes32BE(value) {
