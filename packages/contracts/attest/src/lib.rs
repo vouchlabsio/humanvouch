@@ -15,7 +15,7 @@
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype,
     crypto::bls12_381::{Fr, G1Affine, G2Affine, G1_SERIALIZED_SIZE, G2_SERIALIZED_SIZE},
-    symbol_short, vec, Bytes, BytesN, Env, Symbol, Vec, U256,
+    symbol_short, vec, Address, Bytes, BytesN, Env, Symbol, Vec, U256,
 };
 
 const VK_KEY: Symbol = symbol_short!("VK");
@@ -27,6 +27,7 @@ const ROOTS: Symbol = symbol_short!("ROOTS");
 // be replayed and reset `get_vouches` for content that was genuinely vouched.
 const PERSISTENT_TTL_THRESHOLD: u32 = 100_000;
 const PERSISTENT_TTL_EXTEND_TO: u32 = 535_680;
+const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -40,6 +41,8 @@ pub enum Error {
     InvalidProof = 6,
     AlreadyVouched = 7,
     WrongSignalCount = 8,
+    NotInitialized = 9,
+    AlreadyInitialized = 10,
 }
 
 #[contracttype]
@@ -84,6 +87,17 @@ fn slice32(env: &Env, bytes: &Bytes, pos: u32, err: Error) -> Result<BytesN<32>,
     let mut arr = [0u8; 32];
     bytes.slice(pos..end).copy_into_slice(&mut arr);
     Ok(BytesN::from_array(env, &arr))
+}
+
+/// Require authorisation from the stored admin before a privileged write.
+fn require_admin(env: &Env) -> Result<(), Error> {
+    let admin: Address = env
+        .storage()
+        .instance()
+        .get(&ADMIN_KEY)
+        .ok_or(Error::NotInitialized)?;
+    admin.require_auth();
+    Ok(())
 }
 
 impl VerificationKey {
@@ -179,15 +193,28 @@ pub struct AttestContract;
 
 #[contractimpl]
 impl AttestContract {
-    /// Store the circuit verifying key (parsed once so a malformed key cannot be stored).
+    /// One-time initialisation; records the registry issuer (admin) address.
+    pub fn initialize(env: Env, admin: Address) -> Result<(), Error> {
+        if env.storage().instance().has(&ADMIN_KEY) {
+            return Err(Error::AlreadyInitialized);
+        }
+        admin.require_auth();
+        env.storage().instance().set(&ADMIN_KEY, &admin);
+        Ok(())
+    }
+
+    /// Store the circuit verifying key (admin-only; parsed once so a malformed key cannot be stored).
     pub fn set_vk(env: Env, vk_bytes: Bytes) -> Result<(), Error> {
+        require_admin(&env)?;
         let _vk = VerificationKey::from_bytes(&env, &vk_bytes)?;
         env.storage().instance().set(&VK_KEY, &vk_bytes);
         Ok(())
     }
 
     /// Registry issuer publishes a valid Merkle root (idempotent).
+    /// Registry issuer publishes a valid Merkle root (admin-only, idempotent).
     pub fn set_root(env: Env, root: BytesN<32>) {
+        require_admin(&env).unwrap();
         let mut roots: Vec<BytesN<32>> =
             env.storage().instance().get(&ROOTS).unwrap_or(Vec::new(&env));
         let mut found = false;
@@ -374,5 +401,52 @@ mod test {
             assert!(env.storage().persistent().get_ttl(&nk) > default_ttl);
             assert!(env.storage().persistent().get_ttl(&vkey) > default_ttl);
         });
+    }
+    use soroban_sdk::testutils::Address as _;
+
+    fn setup(env: &Env) -> (AttestContractClient<'_>, Address) {
+        env.mock_all_auths();
+        let contract_id = env.register(AttestContract, ());
+        let client = AttestContractClient::new(env, &contract_id);
+        let admin = Address::generate(env);
+        client.initialize(&admin);
+        (client, admin)
+    }
+
+    #[test]
+    fn set_root_from_admin_succeeds() {
+        let env = Env::default();
+        let (client, _admin) = setup(&env);
+        let root = BytesN::from_array(&env, &[7u8; 32]);
+        client.set_root(&root);
+        assert!(client.is_valid_root(&root));
+    }
+
+    #[test]
+    fn initialize_is_one_time() {
+        let env = Env::default();
+        let (client, _admin) = setup(&env);
+        let other = Address::generate(&env);
+        let res = client.try_initialize(&other);
+        assert!(matches!(res, Err(Ok(Error::AlreadyInitialized))));
+    }
+
+    #[test]
+    #[should_panic]
+    fn set_root_without_admin_authorisation_panics() {
+        let env = Env::default();
+        let (client, _admin) = setup(&env);
+        // Disable auth mocking so require_auth must see a real (missing) authorisation.
+        env.set_auths(&[]);
+        client.set_root(&BytesN::from_array(&env, &[7u8; 32]));
+    }
+
+    #[test]
+    #[should_panic]
+    fn set_vk_without_admin_authorisation_panics() {
+        let env = Env::default();
+        let (client, _admin) = setup(&env);
+        env.set_auths(&[]);
+        client.set_vk(&Bytes::from_slice(&env, &[0u8; 4]));
     }
 }
