@@ -151,3 +151,19 @@ fn main() {
 
     println!("{hex}");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::g2_bytes;
+
+    // Must match `packages/web/test/snarkHex.test.js` for the fixed G2 point
+    // [[1,2],[3,4]]: Arkworks `serialize_uncompressed` writes each Fq2 as [c0, c1]
+    // (no Solidity-style [c1, c0] swap), so the browser encoder must not reorder.
+    #[test]
+    fn g2_limb_order_matches_js_encoder() {
+        let got = hex::encode(g2_bytes("1", "2", "3", "4"));
+        let expected = format!("{:096x}{:096x}{:096x}{:096x}", 1u8, 2u8, 3u8, 4u8);
+        assert_eq!(got, expected);
+        assert_eq!(got.len(), 192 * 2);
+    }
+}
