@@ -40,13 +40,17 @@ export default defineEventHandler(async (event) => {
 
   const resource = `/api/v1/attestation?hash=${contentField.toString()}`;
 
-  // x402: require a micropayment before serving the verification.
+  // x402: require a *verified* micropayment before serving the verification.
+  // A header that cannot be proven to pay the endpoint is treated as no payment.
   const payment = getHeader(event, "x-payment");
-  if (!payment) {
+  const paid = payment ? await verifyX402Payment(cfg, payment) : false;
+  if (!paid) {
     setResponseStatus(event, 402);
     return {
       x402Version: 1,
-      error: "X-Payment header required",
+      error: payment
+        ? "X-Payment header present but no verified payment was found"
+        : "X-Payment header required",
       accepts: [
         {
           scheme: "exact",
