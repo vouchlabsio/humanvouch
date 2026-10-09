@@ -59,6 +59,10 @@ export default defineNuxtConfig({
       // Public Turnstile sitekey (the matching secret stays server-side in
       // CF_TURNSTILE_SECRET). Defaults to Cloudflare's public test key.
       turnstileSitekey: process.env.CF_TURNSTILE_SITEKEY || "1x00000000000000000000AA",
+      // Dedicated x402 payment destination (set PAYMENT_ADDRESS in the deploy env).
+      // Kept separate from readSourcePublicKey so incoming payments never share
+      // the account whose sequence number every on-chain read depends on.
+      paymentAddress: process.env.PAYMENT_ADDRESS || "",
     },
   },
   app: {
