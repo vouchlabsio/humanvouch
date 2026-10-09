@@ -19,6 +19,18 @@ Last updated: 2026-06-29
   membership proof, enforces `is_valid_root` (MANDATORY), records a vouch → returned `1`
   (tx `f0f823da…`); `get_vouches` → `1`; a replayed attest → `Error #7 AlreadyVouched`
   (one human, one vouch per content). Source: `packages/contracts/attest/`.
+- **Verifying key (BLS12-381):** committed at `packages/zk/build/verification_key.json`
+  (`curve: bls12381`, `nPublic: 3`, `IC.length == 4`), exported from the circuit's zkey with
+  `snarkjs zkey export verificationkey packages/web/public/zk/attestation255.zkey`. This is the key
+  the deployed `AttestContract` was configured with via `set_vk`; re-apply it with:
+
+  ```bash
+  VK_HEX=$(cargo run -q --manifest-path packages/contracts/circom-to-soroban-hex/Cargo.toml -- vk packages/zk/build/verification_key.json)
+  stellar contract invoke \
+    --id CDPDQJB7HX5XVOUHEDQKV6T7KJXNGVTVH3VDCXMFEE7GPIIINOVO5YZT \
+    --source hv-deployer --network testnet \
+    -- set_vk --vk_bytes "$VK_HEX"
+  ```
 
 ## Tooling (installed)
 
@@ -46,6 +58,8 @@ Build artifacts (`build/`, `target/`, `*.zkey`, `*.ptau`) are gitignored and reg
 3. ~~**Deploy**: Nuxt + nitro server routes → Vercel or Cloudflare Pages; content index → Turso;
    contracts on testnet.~~ ✅ DONE — the Nuxt app deploys to Vercel via
    `packages/web/scripts/deploy.sh` (see the "Deploy" section in [README.md](../README.md)).
+3. **Deploy**: Nuxt + nitro server routes → Vercel or Cloudflare Pages; content index → Turso;
+   contracts on testnet.
 
 ## Reproduce the proven core
 
