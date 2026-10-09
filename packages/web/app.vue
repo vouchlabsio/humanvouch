@@ -237,14 +237,17 @@ async function runAgentQuery() {
       <!-- masthead -->
       <header class="flex items-center justify-between border-b border-ink-600 px-6 py-4 sm:px-10">
         <span class="font-display text-xl font-semibold tracking-tight text-paper">HumanVouch</span>
-        <button
-          class="flex items-center gap-2 rounded-sm border px-3 py-1.5 font-mono text-xs transition"
-          :class="wallet ? 'border-brass/50 text-brass-light' : 'border-ink-600 text-paper-dim hover:border-brass hover:text-brass-light'"
-          @click="connect"
-        >
-          <span v-if="wallet" class="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          {{ walletBusy ? (walletStatus || "Connecting…") : wallet ? short(wallet) + " · testnet" : "Create testnet wallet" }}
-        </button>
+        <div class="flex flex-col items-end gap-1">
+          <button
+            class="flex items-center gap-2 rounded-sm border px-3 py-1.5 font-mono text-xs transition"
+            :class="wallet ? 'border-brass/50 text-brass-light' : 'border-ink-600 text-paper-dim hover:border-brass hover:text-brass-light'"
+            @click="connect"
+          >
+            <span v-if="wallet" class="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            {{ walletBusy ? (walletStatus || "Connecting…") : wallet ? short(wallet) + " · testnet" : "Create testnet wallet" }}
+          </button>
+          <p v-if="walletErr" class="font-mono text-xs text-oxblood">⚠ {{ walletErr }}</p>
+        </div>
       </header>
 
       <p v-if="walletErr" role="alert" class="border-b border-ink-600 px-6 py-3 font-mono text-xs text-oxblood sm:px-10">⚠ {{ walletErr }}</p>
@@ -306,6 +309,8 @@ async function runAgentQuery() {
               <p v-if="humanErr" class="mt-2 font-mono text-xs text-oxblood">⚠ {{ humanErr }}</p>
             </div>
             <p v-else class="mt-2 text-xs text-brass-light">✓ Human verified · identity issued <span class="text-paper-faint">(real anti-bot via Turnstile; World ID adds uniqueness)</span></p>
+            <!-- always visible, including a failure after a successful check -->
+            <p v-if="humanErr" class="mt-2 font-mono text-xs text-oxblood">⚠ {{ humanErr }}</p>
           </div>
 
           <label class="mt-4 block font-mono text-xs text-paper-faint">YOUR VERIFIED IDENTITY (demo registry)</label>
