@@ -1,0 +1,27 @@
+# Cargo workspace for the HumanVouch Soroban contract crates.
+#
+# Build/test all three crates from one place instead of passing an explicit
+# --manifest-path per crate:
+#   cargo build --manifest-path packages/contracts/Cargo.toml
+#   cargo test  --manifest-path packages/contracts/Cargo.toml
+#
+# `soroban-sdk` is declared once here so `attest` and `groth16-verifier` cannot
+# drift apart in version (they must both target the same Soroban SDK release).
+[workspace]
+resolver = "2"
+members = ["attest", "groth16-verifier", "circom-to-soroban-hex"]
+
+[workspace.dependencies]
+soroban-sdk = "25.1.0"
+
+# The contract crates are compiled to a single cdylib; Cargo ignores [profile.*]
+# in member manifests, so the release profile lives at the workspace root.
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
