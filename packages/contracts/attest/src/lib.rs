@@ -5,9 +5,9 @@
 //! membership proof into an on-chain attestation:
 //!   - `set_vk`   : store the circuit verifying key (once).
 //!   - `set_root` : the registry issuer publishes a valid Merkle root.
-//!   - `attest`   : verify a membership proof, require its root be valid (MANDATORY —
-//!                  Groth16 validity alone is NOT membership), reject nullifier replay
-//!                  per content, and record one unique vouch for the content hash.
+//!   - `attest`   : verify a membership proof, require its root be valid
+//!     (MANDATORY — Groth16 validity alone is NOT membership), reject nullifier
+//!     replay per content, and record one unique vouch for the content hash.
 //!   - `get_vouches` / `is_valid_root` : read-only views.
 //!
 //! Public signal order (from the circuit): [0]=root, [1]=nullifierHash, [2]=contentHash.
@@ -130,7 +130,13 @@ impl VerificationKey {
         if pos != bytes.len() || ic_len == 0 {
             return Err(Error::MalformedVerifyingKey);
         }
-        Ok(Self { alpha, beta, gamma, delta, ic })
+        Ok(Self {
+            alpha,
+            beta,
+            gamma,
+            delta,
+            ic,
+        })
     }
 }
 
@@ -172,7 +178,12 @@ fn parse_signals(env: &Env, bytes: &Bytes) -> Result<Vec<Fr>, Error> {
     Ok(out)
 }
 
-fn verify_proof(env: &Env, vk: VerificationKey, proof: Proof, pub_signals: Vec<Fr>) -> Result<bool, Error> {
+fn verify_proof(
+    env: &Env,
+    vk: VerificationKey,
+    proof: Proof,
+    pub_signals: Vec<Fr>,
+) -> Result<bool, Error> {
     if pub_signals.len() + 1 != vk.ic.len() {
         return Err(Error::MalformedVerifyingKey);
     }
@@ -225,20 +236,25 @@ impl AttestContract {
             }
         }
         if !found {
+    pub fn set_root(env: Env, root: BytesN<32>) {
+        let mut roots: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&ROOTS)
+            .unwrap_or(Vec::new(&env));
+        if !roots.contains(&root) {
             roots.push_back(root);
             env.storage().instance().set(&ROOTS, &roots);
         }
     }
 
     pub fn is_valid_root(env: Env, root: BytesN<32>) -> bool {
-        let roots: Vec<BytesN<32>> =
-            env.storage().instance().get(&ROOTS).unwrap_or(Vec::new(&env));
-        for r in roots.iter() {
-            if r == root {
-                return true;
-            }
-        }
-        false
+        let roots: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&ROOTS)
+            .unwrap_or(Vec::new(&env));
+        roots.contains(&root)
     }
 
     /// Verify a membership proof and record one unique human vouch for the content.

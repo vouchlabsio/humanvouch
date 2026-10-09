@@ -1,0 +1,6 @@
+# rustfmt configuration for the HumanVouch contract crates (packages/contracts).
+#
+# Kept intentionally close to rustfmt's defaults so `cargo fmt --check` stays
+# stable across rustfmt releases; the only explicit setting is the edition used
+# when the file is formatted without a Cargo manifest.
+edition = "2021"
