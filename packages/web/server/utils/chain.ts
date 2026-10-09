@@ -5,12 +5,15 @@ import { sha256ToField } from "../lib/field.js";
 
 export async function contentToField(text: string): Promise<bigint> {
   return sha256ToField(text);
+import { createHash } from "node:crypto";
+import { normalizeContent } from "../../lib/normalize.js";
+
 const FR = BigInt(
   "52435875175126190479447740508185965837690552500527637822603658699938581184513",
 );
 
 export function contentToField(text: string): bigint {
-  const hex = createHash("sha256").update(text, "utf8").digest("hex");
+  const hex = createHash("sha256").update(normalizeContent(text), "utf8").digest("hex");
   return BigInt("0x" + hex) % FR;
 }
 
