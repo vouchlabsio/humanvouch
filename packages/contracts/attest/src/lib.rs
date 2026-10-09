@@ -346,6 +346,7 @@ mod test {
     /// against an identity `ic` entry, so the signal values stay unconstrained —
     /// enough to exercise the storage/TTL path under test.
     /// enough to exercise the vouch-count accounting under test.
+    /// enough to exercise the nullifier-replay guard under test.
     fn vk_and_proof(env: &Env) -> (Bytes, Bytes) {
         let bls = env.crypto().bls12_381();
         let msg = Bytes::from_slice(env, b"humanvouch-attest-test");
@@ -496,5 +497,51 @@ mod test {
 
         assert_eq!(client.attest(&proof, &second), 2);
         assert_eq!(client.get_vouches(&BytesN::from_array(&env, &content)), 2);
+
+    fn setup(env: &Env) -> (AttestContractClient<'_>, Bytes, Bytes, [u8; 32]) {
+        let contract_id = env.register(AttestContract, ());
+        let client = AttestContractClient::new(env, &contract_id);
+        let (vk, proof) = vk_and_proof(env);
+        client.set_vk(&vk);
+        let root = [7u8; 32];
+        client.set_root(&BytesN::from_array(env, &root));
+        (client, proof, vk, root)
+    }
+
+    #[test]
+    fn replaying_the_same_nullifier_is_rejected() {
+        let env = Env::default();
+        let (client, proof, _vk, root) = setup(&env);
+        let nullifier = [1u8; 32];
+        let content = [2u8; 32];
+        let pub_signals = signals(&env, &root, &nullifier, &content);
+
+        assert_eq!(client.attest(&proof, &pub_signals), 1);
+        assert_eq!(client.get_vouches(&BytesN::from_array(&env, &content)), 1);
+
+        let replayed = client.try_attest(&proof, &pub_signals);
+        assert!(matches!(replayed, Err(Ok(Error::AlreadyVouched))));
+        // the replay must not bump the recorded count
+        assert_eq!(client.get_vouches(&BytesN::from_array(&env, &content)), 1);
+    }
+
+    #[test]
+    fn same_nullifier_on_different_content_is_accepted() {
+        let env = Env::default();
+        let (client, proof, _vk, root) = setup(&env);
+        let nullifier = [1u8; 32];
+        let content_a = [2u8; 32];
+        let content_b = [3u8; 32];
+
+        let signals_a = signals(&env, &root, &nullifier, &content_a);
+        let signals_b = signals(&env, &root, &nullifier, &content_b);
+
+        assert_eq!(client.attest(&proof, &signals_a), 1);
+        // the nullifier key is composite (content, nullifier): a different
+        // content hash is a distinct vouch even for the same nullifier.
+        assert_eq!(client.attest(&proof, &signals_b), 1);
+
+        assert_eq!(client.get_vouches(&BytesN::from_array(&env, &content_a)), 1);
+        assert_eq!(client.get_vouches(&BytesN::from_array(&env, &content_b)), 1);
     }
 }
