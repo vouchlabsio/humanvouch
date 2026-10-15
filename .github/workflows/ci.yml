@@ -58,7 +58,7 @@ jobs:
     timeout-minutes: 20
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v7
       with:
         node-version: '24'
     - name: Enable Corepack
@@ -113,7 +113,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: 20
     - name: Enable Corepack (Yarn 4)
@@ -132,7 +132,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: 20
     - name: Enable Corepack (Yarn 4)
@@ -151,7 +151,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: 20
     - name: Validate committed verification key
@@ -166,7 +166,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: 20
     - name: Enable Corepack (Yarn 4)
@@ -193,7 +193,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: 20
     - name: Enable Corepack (Yarn 4)
