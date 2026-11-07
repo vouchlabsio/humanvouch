@@ -45,4 +45,22 @@ describe("POST /api/verify-human", () => {
     expect(url).toBe("https://challenges.cloudflare.com/turnstile/v0/siteverify");
     expect(JSON.parse(init.body)).toMatchObject({ response: "tok" });
   });
+
+  it("returns 503 and success:false when siteverify fetch rejects", async () => {
+    fetchMock.mockRejectedValue(new Error("Network connection timeout"));
+    const r = await call({ token: "tok" });
+    expect(r.status).toBe(503);
+    expect(r.body).toEqual({ success: false, error: "verification service unavailable" });
+  });
+
+  it("returns 503 and success:false when siteverify returns non-JSON body", async () => {
+    fetchMock.mockResolvedValue({
+      json: async () => {
+        throw new SyntaxError("Unexpected token '<' in JSON at position 0");
+      },
+    });
+    const r = await call({ token: "tok" });
+    expect(r.status).toBe(503);
+    expect(r.body).toEqual({ success: false, error: "malformed verification response" });
+  });
 });

@@ -30,7 +30,11 @@ async function onHumanToken(token: string) {
     humanVerified.value = !!r.success;
     if (!r.success) humanErr.value = "human check failed — try again";
   } catch (e: any) {
-    humanErr.value = e.message || "verification error";
+    if (e.statusCode === 503 || e.status === 503 || e.response?.status === 503) {
+      humanErr.value = "verification service unavailable — please try again later";
+    } else {
+      humanErr.value = e.data?.error || e.message || "verification error";
+    }
   } finally {
     verifyingHuman.value = false;
   }
