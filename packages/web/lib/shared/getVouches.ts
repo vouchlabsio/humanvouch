@@ -4,7 +4,7 @@
  */
 export interface GetVouchesParams {
   server: any;          // SorobanRpc.Server instance
-  account: any;          // Source account object
+  account: any;         // Source account object
   contractId: string;
   contentHashBytes: Uint8Array;
   networkPassphrase: string;

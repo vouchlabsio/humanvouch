@@ -9,6 +9,7 @@
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { hexToBytes } from "./snarkHex.js";
 import { getWrappingKey } from "./keyStore.js";
+import { simulateGetVouches } from "./shared/getVouches.js";
 
 const LS_KEY = "hv_wallet_secret"; // legacy plaintext secret, migrated away on first read
 const LS_ENC = "hv_wallet_secret_v2"; // AES-GCM encrypted { iv, ct } (base64)
@@ -129,19 +130,12 @@ export async function submitAttest(cfg, _address, proofHex, publicHex) {
 export async function getVouches(cfg, _sourceAddress, contentHash32) {
   const server = rpc(cfg);
   const account = await server.getAccount(cfg.readSourcePublicKey);
-  const contract = new StellarSdk.Contract(cfg.attestContractId);
-  const op = contract.call("get_vouches", StellarSdk.xdr.ScVal.scvBytes(contentHash32));
-  const tx = new StellarSdk.TransactionBuilder(account, {
-    fee: "100",
+  return simulateGetVouches({
+    server,
+    account,
+    contractId: cfg.attestContractId,
+    contentHashBytes: contentHash32,
     networkPassphrase: cfg.networkPassphrase,
-  })
-    .addOperation(op)
-    .setTimeout(30)
-    .build();
-  const sim = await server.simulateTransaction(tx);
-  const ns = StellarSdk.SorobanRpc || StellarSdk.rpc;
-  if (ns.Api?.isSimulationError?.(sim) || sim.error) {
-    throw new Error(typeof sim.error === "string" ? sim.error : "simulation error");
-  }
-  return StellarSdk.scValToNative(sim.result.retval);
+    StellarSdk,
+  });
 }
