@@ -112,26 +112,5 @@ async function getReadSourceAccount(server: any, cfg: ChainCfg): Promise<any> {
 
 // Read-only on-chain query: how many unique humans vouch for this content field element.
 export async function getVouchesOnChain(cfg: ChainCfg, contentField: bigint): Promise<number> {
-  const StellarSdk = await import("@stellar/stellar-sdk");
-  const ns = StellarSdk.rpc || StellarSdk.SorobanRpc;
-  const server = new ns.Server(cfg.rpcUrl, { allowHttp: cfg.rpcUrl.startsWith("http://") });
-  const account = await server.getAccount(cfg.readSourcePublicKey);
-  const account = await getReadSourceAccount(server, cfg);
-  const contract = new StellarSdk.Contract(cfg.attestContractId);
-  const op = contract.call(
-    "get_vouches",
-    StellarSdk.xdr.ScVal.scvBytes(fieldToBytes32(contentField)),
-  );
-  const tx = new StellarSdk.TransactionBuilder(account, {
-    fee: "100",
-    networkPassphrase: cfg.networkPassphrase,
-  })
-    .addOperation(op)
-    .setTimeout(30)
-    .build();
-  const sim = await server.simulateTransaction(tx);
-  if (ns.Api?.isSimulationError?.(sim) || sim.error) {
-    throw new Error(typeof sim.error === "string" ? sim.error : "simulation error");
-  }
-  return Number(StellarSdk.scValToNative(sim.result.retval));
+  return fetchVouches(cfg, fieldToBytes32(contentField));
 }
