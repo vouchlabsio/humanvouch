@@ -1,2 +1,3 @@
 build/*
 !build/verification_key.json
+!build/verification_key.bls12-381.json
