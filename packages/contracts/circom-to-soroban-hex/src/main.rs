@@ -6,6 +6,8 @@ use std::{fs, str::FromStr};
 
 #[derive(Deserialize)]
 struct VerificationKeyJson {
+    #[serde(default)]
+    curve: Option<String>,
     vk_alpha_1: [String; 3],
     vk_beta_2: [[String; 2]; 3],
     vk_gamma_2: [[String; 2]; 3],
@@ -69,6 +71,12 @@ fn parse_u256_be(signal: &str) -> [u8; 32] {
 fn vk_hex(path: &str) -> String {
     let src = fs::read_to_string(path).expect("failed to read vk json");
     let vk: VerificationKeyJson = serde_json::from_str(&src).expect("invalid vk json");
+
+    match vk.curve.as_deref() {
+        Some(c) if c.eq_ignore_ascii_case("bls12381") || c.eq_ignore_ascii_case("bls12-381") => {}
+        Some(c) => panic!("unsupported curve: expected bls12-381, got {c}"),
+        None => panic!("missing 'curve' field in verification key json: expected bls12-381"),
+    }
 
     if vk.ic.len() != vk.n_public + 1 {
         panic!("IC length does not match nPublic + 1");
@@ -165,5 +173,56 @@ mod tests {
         let expected = format!("{:096x}{:096x}{:096x}{:096x}", 1u8, 2u8, 3u8, 4u8);
         assert_eq!(got, expected);
         assert_eq!(got.len(), 192 * 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "unsupported curve: expected bls12-381, got bn128")]
+    fn rejects_committed_bn128_key() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../circuits/build/verification_key.json"
+        );
+        let _ = super::vk_hex(path);
+    }
+
+    #[test]
+    fn parses_committed_bls12_381_key() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../zk/build/verification_key.json"
+        );
+        let hex = super::vk_hex(path);
+        assert!(!hex.is_empty());
+    }
+
+    #[test]
+    fn parses_circuits_bls12_381_key() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../circuits/build/verification_key.bls12-381.json"
+        );
+        let hex = super::vk_hex(path);
+        assert!(!hex.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "unsupported curve: expected bls12-381, got alt_bn128")]
+    fn rejects_other_curves() {
+        let json = r#"{
+            "protocol": "groth16",
+            "curve": "alt_bn128",
+            "nPublic": 3,
+            "vk_alpha_1": ["0", "0", "0"],
+            "vk_beta_2": [["0", "0"], ["0", "0"], ["0", "0"]],
+            "vk_gamma_2": [["0", "0"], ["0", "0"], ["0", "0"]],
+            "vk_delta_2": [["0", "0"], ["0", "0"], ["0", "0"]],
+            "IC": [["0", "0", "0"], ["0", "0", "0"], ["0", "0", "0"], ["0", "0", "0"]]
+        }"#;
+        let vk: super::VerificationKeyJson = serde_json::from_str(json).unwrap();
+        match vk.curve.as_deref() {
+            Some(c) if c.eq_ignore_ascii_case("bls12381") || c.eq_ignore_ascii_case("bls12-381") => {}
+            Some(c) => panic!("unsupported curve: expected bls12-381, got {c}"),
+            None => panic!("missing 'curve' field in verification key json: expected bls12-381"),
+        }
     }
 }

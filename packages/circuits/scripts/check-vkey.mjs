@@ -6,7 +6,7 @@
 // hand-edited or mismatched key silently breaks on-chain verification. This
 // check asserts the invariants the AttestContract relies on:
 //   * protocol == "groth16"
-//   * curve    == "bn128"   (the curve the deployed contract expects)
+//   * curve    in ["bn128", "bls12381", "bls12-381"]
 //   * nPublic  == 3         (public signals: root, nullifierHash, contentHash)
 //   * IC.length == nPublic + 1   (the invariant circom-to-soroban-hex panics on)
 //
@@ -21,7 +21,7 @@ const VKEY_PATH =
   process.env.VKEY_PATH ?? path.join(here, "..", "build", "verification_key.json");
 
 const EXPECTED_PROTOCOL = "groth16";
-const EXPECTED_CURVE = "bn128";
+const ACCEPTED_CURVES = ["bn128", "bls12381", "bls12-381"];
 const EXPECTED_NPUBLIC = 3;
 
 function fail(message) {
@@ -46,8 +46,12 @@ console.log(`  IC.length: ${icLength}`);
 if (vkey.protocol !== EXPECTED_PROTOCOL) {
   fail(`protocol is "${vkey.protocol}", expected "${EXPECTED_PROTOCOL}"`);
 }
-if (vkey.curve !== EXPECTED_CURVE) {
-  fail(`curve is "${vkey.curve}", expected "${EXPECTED_CURVE}"`);
+const normalizedCurve = (vkey.curve ?? "").toLowerCase().replace(/[-_]/g, "");
+const isAcceptedCurve = ACCEPTED_CURVES.some(
+  (c) => c.toLowerCase().replace(/[-_]/g, "") === normalizedCurve
+);
+if (!isAcceptedCurve) {
+  fail(`curve is "${vkey.curve}", expected one of: ${ACCEPTED_CURVES.join(", ")}`);
 }
 if (vkey.nPublic !== EXPECTED_NPUBLIC) {
   fail(`nPublic is ${vkey.nPublic}, expected ${EXPECTED_NPUBLIC}`);
