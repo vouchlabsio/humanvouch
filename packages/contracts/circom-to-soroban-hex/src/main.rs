@@ -6,6 +6,7 @@ use std::{fs, str::FromStr};
 
 #[derive(Deserialize)]
 struct VerificationKeyJson {
+    curve: String,
     vk_alpha_1: [String; 3],
     vk_beta_2: [[String; 2]; 3],
     vk_gamma_2: [[String; 2]; 3],
